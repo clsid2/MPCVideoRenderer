@@ -59,7 +59,7 @@ protected:
 	bool m_bInterpolateAt50pct             = true;
 	bool m_bUseDither                      = true;
 	bool m_bDeintBlend                     = false;
-	int  m_iSwapEffect                     = SWAPEFFECT_Flip;
+	int  m_iSwapEffect                     = SWAPEFFECT_Discard;
 	bool m_bVBlankBeforePresent            = false;
 	bool m_bAdjustPresentTime              = true;
 	bool m_bHdrPreferDoVi                  = false;
