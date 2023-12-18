@@ -45,10 +45,15 @@ struct Tex_t
 			hr = pTexture->GetSurfaceLevel(0, &pSurface);
 			if (S_OK == hr) {
 				D3DSURFACE_DESC desc = {};
-				EXECUTE_ASSERT(S_OK == pSurface->GetDesc(&desc));
-				Format = desc.Format;
-				Width  = desc.Width;
-				Height = desc.Height;
+				hr = pSurface->GetDesc(&desc);
+				if (S_OK == hr) {
+					Format = desc.Format;
+					Width = desc.Width;
+					Height = desc.Height;
+				} else {
+					pSurface.Release();
+					pTexture.Release();
+				}
 			} else {
 				ASSERT(FALSE);
 				pTexture.Release();
