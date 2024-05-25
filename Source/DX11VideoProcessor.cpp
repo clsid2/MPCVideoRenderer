@@ -2257,7 +2257,7 @@ HRESULT CDX11VideoProcessor::CopySample(IMediaSample* pSample)
 				if (primaries_x[0] > 0. && primaries_x[1] > 0. && primaries_x[2] > 0.
 						&& primaries_y[0] > 0. && primaries_y[1] > 0. && primaries_y[2] > 0.
 						&& hdr->white_point_x > 0. && hdr->white_point_y > 0.
-						&& hdr->max_display_mastering_luminance > 0. && hdr->min_display_mastering_luminance > 0.) {
+						&& hdr->max_display_mastering_luminance > 0.) {
 					m_hdr10.bValid = true;
 
 					m_hdr10.hdr10.RedPrimary[0]   = static_cast<UINT16>(std::lround(primaries_x[2] * 50000.0));
