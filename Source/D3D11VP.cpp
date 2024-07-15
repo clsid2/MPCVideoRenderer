@@ -854,6 +854,12 @@ HRESULT CD3D11VP::SetRTXVideoHDRNvidia(const bool enable)
 	constexpr UINT kStreamExtensionVersionV4 = 0x4;
 	constexpr UINT kStreamExtensionMethodTrueHDR = 0x3;
 
+	UINT available = 0;
+	HRESULT hr = m_pVideoContext->VideoProcessorGetStreamExtension(m_pVideoProcessor, 0, &kNvidiaTrueHDRInterfaceGUID, sizeof(available), &available);
+	if (hr != S_OK || !available) {
+		return S_FALSE;
+	}
+
 	struct {
 		UINT version;
 		UINT method;
@@ -866,7 +872,7 @@ HRESULT CD3D11VP::SetRTXVideoHDRNvidia(const bool enable)
 		enable ? 1 : 0
 	};
 
-	HRESULT hr = m_pVideoContext->VideoProcessorSetStreamExtension(
+	hr = m_pVideoContext->VideoProcessorSetStreamExtension(
 		m_pVideoProcessor, 0, &kNvidiaTrueHDRInterfaceGUID,
 		sizeof(stream_extension_info), &stream_extension_info);
 
