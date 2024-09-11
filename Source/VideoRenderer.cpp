@@ -1024,7 +1024,12 @@ HRESULT CMpcVideoRenderer::Init(const bool bCreateWindow/* = false*/)
 			RemoveParentWndProc(m_hWndParentMain);
 		}
 
-		m_hWndParentMain = hwnd;
+		if (hwnd == nullptr) {
+			ASSERT(m_filterState == State_Stopped);
+			return S_OK;
+		} else {
+			m_hWndParentMain = hwnd;
+		}
 
 		LONG_PTR lpPreviousProc = SetWindowLongPtrW(m_hWndParentMain, GWLP_WNDPROC, (LONG_PTR)ParentWndProc);
 		if (lpPreviousProc != 0 && lpPreviousProc != (LONG_PTR)ParentWndProc) {
@@ -1098,7 +1103,7 @@ HRESULT CMpcVideoRenderer::Init(const bool bCreateWindow/* = false*/)
 // IVideoWindow
 STDMETHODIMP CMpcVideoRenderer::put_Owner(OAHWND Owner)
 {
-	if (Owner && m_hWndParent != (HWND)Owner) {
+	if (m_hWndParent != (HWND)Owner) {
 		m_hWndParent = (HWND)Owner;
 		return Init(true);
 	}
