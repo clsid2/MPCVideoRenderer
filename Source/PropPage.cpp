@@ -420,6 +420,13 @@ INT_PTR CVRMainPPage::OnReceiveMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
 			}
 			if (nID == IDC_CHECK14) {
 				m_SetsPP.bConvertToSdr = IsDlgButtonChecked(IDC_CHECK14) == BST_CHECKED;
+				if (!m_SetsPP.bConvertToSdr) {
+					if (MessageBoxW(L"This option should NOT be unchecked. You will get problems with incorrect washed out colors!\n\nAre you stubborn and really want to uncheck this option?", L"Warning", MB_YESNO) == IDNO) {
+						m_SetsPP.bConvertToSdr;
+						CheckDlgButton(IDC_CHECK14, BST_CHECKED);
+						return (LRESULT)1;
+					}
+				}
 				EnableControls();
 				SetDirty();
 				return (LRESULT)1;
