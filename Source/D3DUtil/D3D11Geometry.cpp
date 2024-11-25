@@ -308,7 +308,7 @@ HRESULT CD3D11Dots::UpdateVertexBuffer()
 		}
 	}
 
-	if (!m_pVertexBuffer) {
+	if (!m_pVertexBuffer && m_pDevice) {
 		desc = { vertexSize, D3D11_USAGE_DYNAMIC, D3D11_BIND_VERTEX_BUFFER, D3D11_CPU_ACCESS_WRITE, 0, 0 };
 		hr = m_pDevice->CreateBuffer(&desc, nullptr, &m_pVertexBuffer);
 	}
