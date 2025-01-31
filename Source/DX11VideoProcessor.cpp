@@ -1583,7 +1583,11 @@ HRESULT CDX11VideoProcessor::SetDevice(ID3D11Device *pDevice, ID3D11DeviceContex
 	hr = pDXGIAdapter->GetDesc(&dxgiAdapterDesc);
 	if (SUCCEEDED(hr)) {
 		m_VendorId = dxgiAdapterDesc.VendorId;
+		pDXGIAdapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &m_DriverVersion);
 		m_strAdapterDescription = std::format(L"{} ({:04X}:{:04X})", dxgiAdapterDesc.Description, dxgiAdapterDesc.VendorId, dxgiAdapterDesc.DeviceId);
+		if (m_VendorId == PCIV_NVIDIA) {
+			m_strAdapterDescription += std::format(L" ({})", GetDriverVersionStr());
+		}
 		DLog(L"Graphics DXGI adapter: {}", m_strAdapterDescription);
 	}
 
@@ -2322,10 +2326,15 @@ HRESULT CDX11VideoProcessor::InitializeD3D11VP(const FmtConvParams_t& params, co
 	m_bVPUseRTXVideoHDR = (m_D3D11VP.SetRTXVideoHDR(rtxHDR) == S_OK);
 
 	int superRes = SUPERRES_Disable;
-	if (m_bVPScaling && !(m_bACMEnabled && !m_bVPUseRTXVideoHDR && params.CDepth == 8 && m_InternalTexFmt != DXGI_FORMAT_B8G8R8A8_UNORM)) {
-		superRes = m_iVPSuperRes;
+	if (m_bVPScaling) {
+		if (m_bHdrPassthroughSupport && m_bHdrPassthrough && SourceIsHDR()) {
+			if (CheckDriverNVIDIA(572)) {
+				superRes = m_iVPSuperRes;
+			}
+		} else if (params.CDepth == 8 && (m_InternalTexFmt == DXGI_FORMAT_B8G8R8A8_UNORM || !m_bACMEnabled || m_bVPUseRTXVideoHDR) || params.CDepth > 8 && m_InternalTexFmt != DXGI_FORMAT_B8G8R8A8_UNORM && CheckDriverNVIDIA(576)) {
+			superRes = m_iVPSuperRes;
+		}
 	}
-
 	m_bVPUseSuperRes = (m_D3D11VP.SetSuperRes(superRes) == S_OK);
 
 	if (m_hWnd && ((m_bVPUseRTXVideoHDR && !m_pDXGISwapChain4)
@@ -4202,6 +4211,7 @@ void CDX11VideoProcessor::Configure(const Settings_t& config)
 	if (config.iTexFormat != m_iTexFormat) {
 		m_iTexFormat = config.iTexFormat;
 		changeTextures = true;
+		changeSuperRes = true;
 	}
 
 	if (m_srcParams.cformat == CF_NV12) {
@@ -4229,6 +4239,7 @@ void CDX11VideoProcessor::Configure(const Settings_t& config)
 		m_bVPScaling = config.bVPScaling;
 		changeTextures = true;
 		changeVP = true; // temporary solution
+		changeSuperRes = true;
 	}
 
 	if (config.iChromaScaling != m_iChromaScaling) {
@@ -4429,7 +4440,16 @@ void CDX11VideoProcessor::Configure(const Settings_t& config)
 	}
 
 	if (changeSuperRes) {
-		auto superRes = (m_bVPScaling && (m_srcParams.CDepth == 8 || !m_bACMEnabled)) ? m_iVPSuperRes : SUPERRES_Disable;
+		int superRes = SUPERRES_Disable;
+		if (m_bVPScaling) {
+			if (m_bHdrPassthroughSupport && m_bHdrPassthrough && SourceIsHDR()) {
+				if (CheckDriverNVIDIA(572)) {
+					superRes = m_iVPSuperRes;
+				}
+			} else if (m_srcParams.CDepth == 8 && (m_InternalTexFmt == DXGI_FORMAT_B8G8R8A8_UNORM || !m_bACMEnabled) || m_srcParams.CDepth > 8 && m_InternalTexFmt != DXGI_FORMAT_B8G8R8A8_UNORM && CheckDriverNVIDIA(576)) {
+				superRes = m_iVPSuperRes;
+			}
+		}
 		m_bVPUseSuperRes = (m_D3D11VP.SetSuperRes(superRes) == S_OK);
 	}
 
