@@ -412,7 +412,8 @@ HRESULT CDX9VideoProcessor::InitInternal(bool bFullCreate, bool* pChangeDevice)
 	D3DADAPTER_IDENTIFIER9 AdapID9 = {};
 	if (S_OK == m_pD3DEx->GetAdapterIdentifier(m_nCurrentAdapter, 0, &AdapID9)) {
 		m_VendorId = AdapID9.VendorId;
-		m_strAdapterDescription = std::format(L"{} ({:04X}:{:04X})", A2WStr(AdapID9.Description), AdapID9.VendorId, AdapID9.DeviceId);
+		m_DriverVersion = AdapID9.DriverVersion;
+		m_strAdapterDescription = std::format(L"{} ({:04X}:{:04X}) ({})", A2WStr(AdapID9.Description), AdapID9.VendorId, AdapID9.DeviceId, GetDriverVersionStr());
 		DLog(L"Graphics D3D9 adapter: {}", m_strAdapterDescription);
 	}
 
