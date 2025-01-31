@@ -119,6 +119,23 @@ protected:
 	UINT m_nCurrentAdapter = {}; // redefine explicitly in subclasses
 	DWORD m_VendorId = 0;
 	std::wstring m_strAdapterDescription;
+	LARGE_INTEGER m_DriverVersion = LARGE_INTEGER();
+
+	std::wstring GetDriverVersionStr()
+	{
+		std::wstring ver;
+		if (m_VendorId == PCIV_NVIDIA) {
+			ver = std::format(L"{}.{}", (HIWORD(m_DriverVersion.LowPart) % 10) * 100 + LOWORD(m_DriverVersion.LowPart) / 100, LOWORD(m_DriverVersion.LowPart) % 100);
+		} else {
+			ver = std::format(L"{}.{}.{}.{}", HIWORD(m_DriverVersion.HighPart), LOWORD(m_DriverVersion.HighPart), HIWORD(m_DriverVersion.LowPart), LOWORD(m_DriverVersion.LowPart));
+		}
+		return ver;
+	}
+
+	bool CheckDriverNVIDIA(int majorver)
+	{
+		return (m_VendorId == PCIV_NVIDIA) && (((HIWORD(m_DriverVersion.LowPart) % 10) * 100 + LOWORD(m_DriverVersion.LowPart) / 100) >= majorver);
+	}
 
 	REFERENCE_TIME m_rtStart = 0;
 	int m_FieldDrawn = 0;
