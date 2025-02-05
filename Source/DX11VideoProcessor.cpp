@@ -597,7 +597,7 @@ HRESULT CDX11VideoProcessor::Init(const HWND hwnd, const bool displayHdrChanged,
 		D3D_DRIVER_TYPE_UNKNOWN,
 		nullptr,
 #ifdef _DEBUG
-		D3D11_CREATE_DEVICE_DEBUG,
+		IsWindows8OrGreater() ? D3D11_CREATE_DEVICE_DEBUG : 0,
 #else
 		0,
 #endif
@@ -1311,8 +1311,12 @@ HRESULT CDX11VideoProcessor::SetDevice(ID3D11Device *pDevice, ID3D11DeviceContex
 		DLog(L"Graphics DXGI adapter: {}", m_strAdapterDescription);
 	}
 
-	HRESULT hr2 = m_D3D11VP.InitVideoDevice(m_pDevice, m_pDeviceContext, m_VendorId);
-	DLogIf(FAILED(hr2), L"CDX11VideoProcessor::SetDevice() : InitVideoDevice failed with error {}", HR2Str(hr2));
+	if (IsWindows8OrGreater()) {
+		HRESULT hr2 = m_D3D11VP.InitVideoDevice(m_pDevice, m_pDeviceContext, m_VendorId);
+		DLogIf(FAILED(hr2), L"CDX11VideoProcessor::SetDevice() : InitVideoDevice failed with error {}", HR2Str(hr2));
+	} else {
+		DLog(L"CDX11VideoProcessor::SetDevice() : InitVideoDevice skipped");
+	}
 
 	D3D11_SAMPLER_DESC SampDesc = {};
 	SampDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
@@ -2110,7 +2114,7 @@ BOOL CDX11VideoProcessor::GetAlignmentSize(const CMediaType& mt, SIZE& Size)
 						case CF_YUY2: disableD3D11VP = !m_VPFormats.bYUY2;  break;
 						default:      disableD3D11VP = !m_VPFormats.bOther; break;
 					}
-					if (disableD3D11VP) {
+					if (disableD3D11VP || !IsWindows8OrGreater()) {
 						VP11Format = DXGI_FORMAT_UNKNOWN;
 					}
 				}
