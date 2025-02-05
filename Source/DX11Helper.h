@@ -95,7 +95,7 @@ struct Tex11Video_t : Tex2D_t
 		Release();
 
 		HRESULT hr = E_FAIL;
-		if (format != DXGI_FORMAT_PLANAR) {
+		if (format != DXGI_FORMAT_PLANAR && IsWindows8OrGreater()) {
 			auto texdesc = CreateTex2DDesc(format, width, height, type);
 			hr = pDevice->CreateTexture2D(&texdesc, nullptr, &pTexture);
 		}
