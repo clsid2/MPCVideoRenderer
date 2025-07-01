@@ -1568,6 +1568,9 @@ HRESULT CDX9VideoProcessor::Render(int field, const REFERENCE_TIME frameStartTim
 
 	if (!m_renderRect.IsRectEmpty()) {
 		hr = Process(pBackBuffer, m_srcRect, m_videoRect, m_FieldDrawn == 2);
+		if (FAILED(hr)) {
+			m_RenderStats.failed++;
+		}
 	}
 
 	if (!m_pPSHalfOUtoInterlace) {
@@ -2674,12 +2677,21 @@ HRESULT CDX9VideoProcessor::Process(IDirect3DSurface9* pRenderTarget, const CRec
 			return hr;
 		}
 
+		if (!m_TexConvertOutput.pSurface || m_TexConvertOutput.Width == 0 || m_TexConvertOutput.Height == 0) {
+			m_bVPScalingUseShaders = true;
+			return E_ABORT;
+		}
+
 		CRect rect(0, 0, m_TexConvertOutput.Width, m_TexConvertOutput.Height);
 		hr = DxvaVPPass(m_TexConvertOutput.pSurface, rSrc, rect, second);
 		pInputTexture = m_TexConvertOutput.pTexture;
 		rSrc = rect;
 	}
 	else if (m_PSConvColorData.bEnable) {
+		if (!m_TexConvertOutput.pSurface || m_TexConvertOutput.Width == 0 || m_TexConvertOutput.Height == 0) {
+			return E_ABORT;
+		}
+
 		ConvertColorPass(m_TexConvertOutput.pSurface);
 		pInputTexture = m_TexConvertOutput.pTexture;
 		rSrc.SetRect(0, 0, m_TexConvertOutput.Width, m_TexConvertOutput.Height);
