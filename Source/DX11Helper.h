@@ -192,12 +192,18 @@ public:
 		index = 0;
 		size = 0;
 		hr = Texs[0].CheckCreate(pDevice, format, width, height, Tex2D_DefaultShaderRTarget);
-		size++;
-		if (S_OK == hr && num >= 2) {
-			hr = Texs[1].CheckCreate(pDevice, format, width, height, Tex2D_DefaultShaderRTarget);
+		if (S_OK == hr) {
 			size++;
-		}
-		else {
+			if (num >= 2) {
+				hr = Texs[1].CheckCreate(pDevice, format, width, height, Tex2D_DefaultShaderRTarget);
+				if (S_OK == hr) {
+					size++;
+				} else {
+					size = 0;
+					Texs[0].Release();
+				}
+			}
+		} else {
 			Texs[1].Release();
 		}
 		return hr;
