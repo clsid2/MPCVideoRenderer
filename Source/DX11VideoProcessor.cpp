@@ -3345,12 +3345,13 @@ HRESULT CDX11VideoProcessor::Process(ID3D11Texture2D* pRenderTarget, const CRect
 		rSrc = rect;
 		rotation = 0;
 	}
-	else if (m_PSConvColorData.bEnable) {
+	else if (m_TexConvertOutput.pTexture && m_PSConvColorData.bEnable) {
 		ConvertColorPass(m_TexConvertOutput.pTexture);
 		pInputTexture = &m_TexConvertOutput;
 		rSrc.SetRect(0, 0, m_TexConvertOutput.desc.Width, m_TexConvertOutput.desc.Height);
 	}
 	else {
+		ASSERT(!m_PSConvColorData.bEnable);
 		pInputTexture = &m_TexSrcVideo;
 	}
 
