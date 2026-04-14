@@ -219,7 +219,7 @@ static HRESULT FillVertexBuffer(ID3D11DeviceContext* pDeviceContext, ID3D11Buffe
 	return hr;
 }
 
-static void TextureBlt11(
+static HRESULT TextureBlt11(
 	ID3D11DeviceContext* pDeviceContext,
 	ID3D11RenderTargetView* pRenderTargetView, D3D11_VIEWPORT& viewport,
 	ID3D11InputLayout* pInputLayout,
@@ -232,7 +232,10 @@ static void TextureBlt11(
 {
 	ASSERT(pDeviceContext);
 	ASSERT(pRenderTargetView);
-	ASSERT(pShaderResourceViews);
+	if (!pShaderResourceViews) {
+		ASSERT(FALSE);
+		return E_FAIL;
+	}
 
 	const UINT Stride = sizeof(VERTEX);
 	const UINT Offset = 0;
@@ -255,6 +258,8 @@ static void TextureBlt11(
 
 	ID3D11ShaderResourceView* views[1] = {};
 	pDeviceContext->PSSetShaderResources(0, 1, views);
+
+	return S_OK;
 }
 
 //
@@ -324,7 +329,7 @@ HRESULT CDX11VideoProcessor::TextureCopyRect(
 	VP.MinDepth = 0.0f;
 	VP.MaxDepth = 1.0f;
 
-	TextureBlt11(m_pDeviceContext, pRenderTargetView, VP, m_pVSimpleInputLayout, m_pVS_Simple, pPixelShader, Tex.pShaderResource, m_pSamplerPoint, pConstantBuffer, m_pVertexBuffer);
+	hr = TextureBlt11(m_pDeviceContext, pRenderTargetView, VP, m_pVSimpleInputLayout, m_pVS_Simple, pPixelShader, Tex.pShaderResource, m_pSamplerPoint, pConstantBuffer, m_pVertexBuffer);
 
 	return hr;
 }
@@ -371,7 +376,7 @@ HRESULT CDX11VideoProcessor::TextureResizeShader(
 	VP.MinDepth = 0.0f;
 	VP.MaxDepth = 1.0f;
 
-	TextureBlt11(m_pDeviceContext, pRenderTargetView, VP, m_pVSimpleInputLayout, m_pVS_Simple, pPixelShader, Tex.pShaderResource, m_pSamplerPoint, m_pResizeShaderConstantBuffer, m_pVertexBuffer);
+	hr = TextureBlt11(m_pDeviceContext, pRenderTargetView, VP, m_pVSimpleInputLayout, m_pVS_Simple, pPixelShader, Tex.pShaderResource, m_pSamplerPoint, m_pResizeShaderConstantBuffer, m_pVertexBuffer);
 
 	return hr;
 }
