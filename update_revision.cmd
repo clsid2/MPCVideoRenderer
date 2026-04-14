@@ -14,8 +14,8 @@ IF NOT EXIST %gitexe% GOTO :END
 
 :GitOK
 
-%gitexe% log -1 --date=format:%%Y.%%m.%%d --pretty=format:"#define REV_DATE %%ad%%n" >> revision.h
-%gitexe% log -1 --pretty=format:"#define REV_HASH %%h%%n" >> revision.h
+%gitexe% log Aleksoid1978/master -1 --date=format:%%Y.%%m.%%d --pretty=format:"#define REV_DATE %%ad%%n" >> revision.h
+%gitexe% log Aleksoid1978/master -1 --pretty=format:"#define REV_HASH %%h%%n" >> revision.h
 
 <nul set /p strTemp=#define REV_BRANCH >> revision.h
 %gitexe% symbolic-ref --short HEAD >> revision.h
@@ -24,7 +24,7 @@ ECHO LOCAL >> revision.h
 )
 
 <nul set /p strTemp=#define REV_NUM >> revision.h
-%gitexe% rev-list --count HEAD >> revision.h
+%gitexe% rev-list --count Aleksoid1978/master >> revision.h
 IF %ERRORLEVEL% NEQ 0 (
 ECHO 0 >> revision.h
 )
