@@ -25,6 +25,8 @@
 #include "FrameStats.h"
 #include "SubPic/ISubPic.h"
 
+#define USEPRESCALESHADERS 0
+
 enum : int {
 	VP_DX9 = 9,
 	VP_DX11 = 11

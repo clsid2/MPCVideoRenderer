@@ -70,6 +70,9 @@ private:
 	Tex11Video_t m_TexSrcVideo; // for copy of frame
 	Tex2D_t m_TexConvertOutput;
 	Tex2D_t m_TexResize;        // for intermediate result of two-pass resize
+#if USEPRESCALESHADERS
+	CTex2DRing m_TexsPreScale;        // for intermediate presize shader results
+#endif
 	CTex2DRing m_TexsPostScale;
 	Tex2D_t m_TexDither;
 
@@ -135,6 +138,9 @@ private:
 
 	std::vector<ExternalPixelShader11_t> m_pPreScaleShaders;
 	std::vector<ExternalPixelShader11_t> m_pPostScaleShaders;
+#if USEPRESCALESHADERS
+	CComPtr<ID3D11Buffer> m_pPreScaleConstants;
+#endif
 	CComPtr<ID3D11Buffer> m_pPostScaleConstants;
 	CComPtr<ID3D11PixelShader> m_pPSHalfOUtoInterlace;
 	CComPtr<ID3D11PixelShader> m_pPSFinalPass;
@@ -267,6 +273,9 @@ private:
 	void ReleaseDevice();
 	void ReleaseSwapChain();
 
+#if USEPRESCALESHADERS
+	UINT GetPreScaleSteps();
+#endif
 	UINT GetPostScaleSteps();
 
 	HRESULT CreatePShaderFromResource(ID3D11PixelShader** ppPixelShader, UINT resid);
@@ -342,6 +351,9 @@ public:
 
 private:
 	void UpdateTexures();
+#if USEPRESCALESHADERS
+	void UpdatePreScaleTextures();
+#endif
 	void UpdatePostScaleTexures();
 	void UpdateUpscalingShaders();
 	void UpdateDownscalingShaders();

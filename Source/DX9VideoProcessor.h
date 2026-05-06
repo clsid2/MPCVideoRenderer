@@ -62,6 +62,9 @@ private:
 	Tex9Video_t m_TexSrcVideo; // for copy of frame
 	Tex_t m_TexConvertOutput;
 	Tex_t m_TexResize;         // for intermediate result of two-pass resize
+#if USEPRESCALESHADERS
+	CTexRing m_TexsPreScale;
+#endif
 	CTexRing m_TexsPostScale;
 	Tex_t m_TexDither;
 
@@ -133,6 +136,9 @@ private:
 	void ReleaseDevice();
 
 	UINT GetPostScaleSteps();
+#if USEPRESCALESHADERS
+	UINT GetPreScaleSteps();
+#endif
 
 	HRESULT InitializeDXVA2VP(const FmtConvParams_t& params, const UINT width, const UINT height);
 	HRESULT InitializeTexVP(const FmtConvParams_t& params, const UINT width, const UINT height);
@@ -188,6 +194,9 @@ public:
 
 private:
 	void UpdateTexures();
+#if USEPRESCALESHADERS
+	void UpdatePreScaleTextures();
+#endif
 	void UpdatePostScaleTexures();
 	void UpdateUpscalingShaders();
 	void UpdateDownscalingShaders();
