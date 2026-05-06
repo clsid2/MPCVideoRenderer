@@ -1452,12 +1452,14 @@ STDMETHODIMP CMpcVideoRenderer::Flt_SetBool(LPCSTR field, bool value)
 		return S_OK;
 	}
 
+#if USEPRESCALESHADERS
 	if (!strcmp(field, "cmd_clearPreScaleShaders") && value) {
 		CAutoLock cRendererLock(&m_RendererLock);
 
 		m_VideoProcessor->ClearPreScaleShaders();
 		return S_OK;
 	}
+#endif
 
 	if (!strcmp(field, "cmd_clearPostScaleShaders") && value) {
 		CAutoLock cRendererLock(&m_RendererLock);
