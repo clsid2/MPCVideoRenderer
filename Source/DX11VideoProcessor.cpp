@@ -2122,6 +2122,9 @@ BOOL CDX11VideoProcessor::GetAlignmentSize(const CMediaType& mt, SIZE& Size)
 				}
 
 				HRESULT hr = E_FAIL;
+				if (!m_pDevice) {
+					return FALSE;
+				}
 				if (VP11Format != DXGI_FORMAT_UNKNOWN) {
 					hr = m_Alignment.texture.Create(m_pDevice, VP11Format, biWidth, biHeight, Tex2D_DynamicShaderWriteNoSRV);
 				}
