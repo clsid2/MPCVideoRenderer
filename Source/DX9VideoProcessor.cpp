@@ -637,9 +637,11 @@ HRESULT CDX9VideoProcessor::ResetInternal()
 		m_d3dpp.FullScreen_RefreshRateInHz = m_DisplayMode.RefreshRate;
 		hr = m_pD3DDevEx->ResetEx(&m_d3dpp, &m_DisplayMode);
 		DLogIf(FAILED(hr), L"CDX9VideoProcessor::ResetInternal() : ResetEx(fullscreen) failed with error {}", HR2Str(hr));
-	} else {
+	} else if (m_pD3DDevEx) {
 		hr = m_pD3DDevEx->ResetEx(&m_d3dpp, nullptr);
 		DLogIf(FAILED(hr), L"CDX9VideoProcessor::ResetInternal() : ResetEx() failed with error {}", HR2Str(hr));
+	} else {
+		hr = E_FAIL;
 	}
 
 	if (FAILED(hr)) {
