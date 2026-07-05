@@ -628,21 +628,25 @@ HRESULT CDX9VideoProcessor::ResetInternal()
 
 	g_bInitVP = true;
 
-	if (m_pFilter->m_bExclusiveScreen) {
-		ZeroMemory(&m_DisplayMode, sizeof(D3DDISPLAYMODEEX));
-		m_DisplayMode.Size = sizeof(D3DDISPLAYMODEEX);
-		HRESULT hr = m_pD3DEx->GetAdapterDisplayModeEx(m_nCurrentAdapter, &m_DisplayMode, nullptr);
-		DLog(L"Display Mode: {}x{}, {}{}", m_DisplayMode.Width, m_DisplayMode.Height, m_DisplayMode.RefreshRate, (m_DisplayMode.ScanLineOrdering == D3DSCANLINEORDERING_INTERLACED) ? 'i' : 'p');
+	if (m_pD3DDevEx) {
+		if (m_pFilter->m_bExclusiveScreen) {
+			ZeroMemory(&m_DisplayMode, sizeof(D3DDISPLAYMODEEX));
+			m_DisplayMode.Size = sizeof(D3DDISPLAYMODEEX);
+			HRESULT hr = m_pD3DEx->GetAdapterDisplayModeEx(m_nCurrentAdapter, &m_DisplayMode, nullptr);
+			DLog(L"Display Mode: {}x{}, {}{}", m_DisplayMode.Width, m_DisplayMode.Height, m_DisplayMode.RefreshRate, (m_DisplayMode.ScanLineOrdering == D3DSCANLINEORDERING_INTERLACED) ? 'i' : 'p');
 
-		m_d3dpp.BackBufferWidth = m_DisplayMode.Width;
-		m_d3dpp.BackBufferHeight = m_DisplayMode.Height;
-		m_d3dpp.BackBufferFormat = m_DisplayMode.Format;
-		m_d3dpp.FullScreen_RefreshRateInHz = m_DisplayMode.RefreshRate;
-		hr = m_pD3DDevEx->ResetEx(&m_d3dpp, &m_DisplayMode);
-		DLogIf(FAILED(hr), L"CDX9VideoProcessor::ResetInternal() : ResetEx(fullscreen) failed with error {}", HR2Str(hr));
+			m_d3dpp.BackBufferWidth = m_DisplayMode.Width;
+			m_d3dpp.BackBufferHeight = m_DisplayMode.Height;
+			m_d3dpp.BackBufferFormat = m_DisplayMode.Format;
+			m_d3dpp.FullScreen_RefreshRateInHz = m_DisplayMode.RefreshRate;
+			hr = m_pD3DDevEx->ResetEx(&m_d3dpp, &m_DisplayMode);
+			DLogIf(FAILED(hr), L"CDX9VideoProcessor::ResetInternal() : ResetEx(fullscreen) failed with error {}", HR2Str(hr));
+		} else {
+			hr = m_pD3DDevEx->ResetEx(&m_d3dpp, nullptr);
+			DLogIf(FAILED(hr), L"CDX9VideoProcessor::ResetInternal() : ResetEx() failed with error {}", HR2Str(hr));
+		}
 	} else {
-		hr = m_pD3DDevEx->ResetEx(&m_d3dpp, nullptr);
-		DLogIf(FAILED(hr), L"CDX9VideoProcessor::ResetInternal() : ResetEx() failed with error {}", HR2Str(hr));
+		hr = E_FAIL;
 	}
 
 	if (FAILED(hr)) {
