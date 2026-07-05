@@ -1638,6 +1638,10 @@ HRESULT CDX9VideoProcessor::Render(int field, const REFERENCE_TIME frameStartTim
 
 HRESULT CDX9VideoProcessor::FillBlack()
 {
+	if (!m_pD3DDevEx) {
+		return E_FAIL;
+	}
+
 	HRESULT hr = m_pD3DDevEx->BeginScene();
 
 	CComPtr<IDirect3DSurface9> pBackBuffer;
