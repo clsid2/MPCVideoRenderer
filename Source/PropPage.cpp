@@ -157,10 +157,10 @@ void CVRMainPPage::EnableControls()
 		GetDlgItem(IDC_COMBO7).EnableWindow(bEnable);
 		GetDlgItem(IDC_STATIC6).EnableWindow(bEnable);
 		GetDlgItem(IDC_SLIDER1).EnableWindow(bEnable);
-		GetDlgItem(IDC_STATIC7).EnableWindow(bEnable && m_SetsPP.bVPScaling);
-		GetDlgItem(IDC_COMBO8).EnableWindow(bEnable && m_SetsPP.bVPScaling);
+		GetDlgItem(IDC_STATIC7).EnableWindow(bEnable && m_SetsPP.bVPScaling && m_SetsPP.iTexFormat != TEXFMT_16FLOAT);
+		GetDlgItem(IDC_COMBO8).EnableWindow(bEnable && m_SetsPP.bVPScaling && m_SetsPP.iTexFormat != TEXFMT_16FLOAT);
 #ifdef _WIN64
-		GetDlgItem(IDC_CHECK19).EnableWindow(bEnable && m_SetsPP.bHdrPassthrough);
+		GetDlgItem(IDC_CHECK19).EnableWindow(bEnable && m_SetsPP.bHdrPassthrough && m_SetsPP.iTexFormat != TEXFMT_8INT && m_SetsPP.iTexFormat != TEXFMT_16FLOAT);
 #endif
 	}
 
@@ -356,8 +356,8 @@ INT_PTR CVRMainPPage::OnReceiveMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
 			if (nID == IDC_CHECK5) {
 				m_SetsPP.bVPScaling = IsDlgButtonChecked(IDC_CHECK5) == BST_CHECKED;
 				SetDirty();
-				GetDlgItem(IDC_STATIC7).EnableWindow(m_SetsPP.bVPScaling && m_SetsPP.bUseD3D11 && IsWindows10OrGreater());
-				GetDlgItem(IDC_COMBO8).EnableWindow(m_SetsPP.bVPScaling && m_SetsPP.bUseD3D11 && IsWindows10OrGreater());
+				GetDlgItem(IDC_STATIC7).EnableWindow(m_SetsPP.bVPScaling && m_SetsPP.bUseD3D11 && IsWindows10OrGreater() && m_SetsPP.iTexFormat != TEXFMT_16FLOAT);
+				GetDlgItem(IDC_COMBO8).EnableWindow(m_SetsPP.bVPScaling && m_SetsPP.bUseD3D11 && IsWindows10OrGreater() && m_SetsPP.iTexFormat != TEXFMT_16FLOAT);
 				return (LRESULT)1;
 			}
 			if (nID == IDC_CHECK6) {
@@ -462,8 +462,10 @@ INT_PTR CVRMainPPage::OnReceiveMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
 				if (lValue != m_SetsPP.iTexFormat) {
 					m_SetsPP.iTexFormat = lValue;
 					SetDirty();
+					GetDlgItem(IDC_STATIC7).EnableWindow(m_SetsPP.bVPScaling && m_SetsPP.bUseD3D11 && IsWindows10OrGreater() && m_SetsPP.iTexFormat != TEXFMT_16FLOAT);
+					GetDlgItem(IDC_COMBO8).EnableWindow(m_SetsPP.bVPScaling && m_SetsPP.bUseD3D11 && IsWindows10OrGreater() && m_SetsPP.iTexFormat != TEXFMT_16FLOAT);
 #ifdef _WIN64
-					GetDlgItem(IDC_CHECK19).EnableWindow(m_SetsPP.bUseD3D11 && m_SetsPP.bHdrPassthrough && m_SetsPP.iTexFormat != TEXFMT_8INT);
+					GetDlgItem(IDC_CHECK19).EnableWindow(m_SetsPP.bUseD3D11 && m_SetsPP.bHdrPassthrough && m_SetsPP.iTexFormat != TEXFMT_8INT && m_SetsPP.iTexFormat != TEXFMT_16FLOAT);
 #endif
 				}
 				return (LRESULT)1;
