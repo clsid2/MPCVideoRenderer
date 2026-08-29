@@ -442,7 +442,7 @@ CDX11VideoProcessor::CDX11VideoProcessor(CMpcVideoRenderer* pFilter, const Setti
 		CComPtr<IDXGIOutput> pDXGIOutput;
 		for (UINT output = 0; pDXGIAdapter->EnumOutputs(output, &pDXGIOutput) != DXGI_ERROR_NOT_FOUND; ++output) {
 			DXGI_OUTPUT_DESC desc{};
-			if (SUCCEEDED(pDXGIOutput->GetDesc(&desc))) {
+			if (pDXGIOutput && SUCCEEDED(pDXGIOutput->GetDesc(&desc))) {
 				DisplayConfig_t displayConfig = {};
 				if (GetDisplayConfig(desc.DeviceName, displayConfig)) {
 					m_hdrModeStartState[desc.DeviceName] = displayConfig.HDREnabled();
