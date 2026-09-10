@@ -99,6 +99,10 @@ STDMETHODIMP CVideoRendererInputPin::ReceiveConnection(IPin* pConnector, const A
 
 	CAutoLock cObjectLock(m_pLock);
 
+	if (!m_pBaseRenderer->CanUseThisFilterInstance()) {
+		return E_FAIL;
+	}
+
 	if (m_Connected) {
 		CMediaType mt(*pmt);
 

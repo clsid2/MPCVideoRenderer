@@ -160,13 +160,6 @@ CMpcVideoRenderer::CMpcVideoRenderer(LPUNKNOWN pUnk, HRESULT* phr)
 {
 	DLog(L"CMpcVideoRenderer::CMpcVideoRenderer()");
 
-	auto nPrevInstance = g_nInstance++; // always increment g_nInstance in the constructor
-	if (nPrevInstance > 0) {
-		*phr = E_ABORT;
-		DLog(L"Previous copy of CMpcVideoRenderer found! Initialization aborted.");
-		return;
-	}
-
 	DLog(L"Windows {}", GetWindowsVersion());
 	DLog(GetNameAndVersion());
 
@@ -330,7 +323,7 @@ CMpcVideoRenderer::~CMpcVideoRenderer()
 
 	UnregisterClassW(g_szClassName, g_hInst);
 
-	if (m_hWndParentMain) {
+	if (m_hWndParentMain && !m_bWindowProcHookDisabled) {
 		RemoveParentWndProc(m_hWndParentMain);
 	}
 
@@ -344,7 +337,9 @@ CMpcVideoRenderer::~CMpcVideoRenderer()
 		::SendMessageW(m_hWndWindow, WM_CLOSE, 0, 0);
 	}
 
-	g_nInstance--; // always decrement g_nInstance in the destructor
+	if (m_bInstanceCountIncemented) {
+		g_nInstance--;
+	}
 }
 
 void CMpcVideoRenderer::NewSegment(REFERENCE_TIME startTime)
@@ -702,6 +697,9 @@ STDMETHODIMP CMpcVideoRenderer::NonDelegatingQueryInterface(REFIID riid, void** 
 	if (riid == __uuidof(ISubRenderOptions)) {
 		return GetInterface((ISubRenderOptions*)this, ppv);
 	}
+	if (riid == __uuidof(IMPCVRSubclassReplacement)) {
+		return GetInterface((IMPCVRSubclassReplacement*)this, ppv);
+	}
 	return __super::NonDelegatingQueryInterface(riid, ppv);
 }
 
@@ -1039,6 +1037,8 @@ HRESULT CMpcVideoRenderer::Init(const bool bCreateWindow/* = false*/)
 {
 	CAutoLock cRendererLock(&m_RendererLock);
 
+	ASSERT(m_bInstanceCountIncemented || m_bWindowProcHookDisabled);
+
 	HRESULT hr = S_OK;
 
 	auto hwnd = m_hWndParent;
@@ -1047,7 +1047,7 @@ HRESULT CMpcVideoRenderer::Init(const bool bCreateWindow/* = false*/)
 	}
 
 	if (hwnd != m_hWndParentMain) {
-		if (m_hWndParentMain) {
+		if (m_hWndParentMain && !m_bWindowProcHookDisabled) {
 			RemoveParentWndProc(m_hWndParentMain);
 		}
 
@@ -1058,12 +1058,14 @@ HRESULT CMpcVideoRenderer::Init(const bool bCreateWindow/* = false*/)
 			m_hWndParentMain = hwnd;
 		}
 
-		LONG_PTR lpPreviousProc = SetWindowLongPtrW(m_hWndParentMain, GWLP_WNDPROC, (LONG_PTR)ParentWndProc);
-		if (lpPreviousProc != 0 && lpPreviousProc != (LONG_PTR)ParentWndProc) {
-			SetPropW(m_hWndParentMain, g_pszOldParentWndProc, (HANDLE)lpPreviousProc);
-			SetPropW(m_hWndParentMain, g_pszThis, (HANDLE)this);
-		} else {
-			ASSERT(false);
+		if (!m_bWindowProcHookDisabled) {
+			LONG_PTR lpPreviousProc = SetWindowLongPtrW(m_hWndParentMain, GWLP_WNDPROC, (LONG_PTR)ParentWndProc);
+			if (lpPreviousProc != 0 && lpPreviousProc != (LONG_PTR)ParentWndProc) {
+				SetPropW(m_hWndParentMain, g_pszOldParentWndProc, (HANDLE)lpPreviousProc);
+				SetPropW(m_hWndParentMain, g_pszThis, (HANDLE)this);
+			} else {
+				ASSERT(false);
+			}
 		}
 	}
 
@@ -1354,6 +1356,19 @@ STDMETHODIMP CMpcVideoRenderer::SetCallback11(ISubRender11Callback* cb)
 	m_pSub11CallBack = cb;
 
 	return S_OK;
+}
+
+// IMPCVRSubclassReplacement
+STDMETHODIMP_(bool) CMpcVideoRenderer::WindowProcFromParent(HWND hwnd, UINT uMsg, WPARAM* wParam, LPARAM* lParam, LRESULT* result)
+{
+	if (uMsg == WM_DISPLAYCHANGE) {
+		DLog(L"WM_DISPLAYCHANGE");
+		OnDisplayModeChange(true);
+	} else if (uMsg == WM_MOVE) {
+		OnWindowMove();
+	}
+
+	return false;
 }
 
 // IExFilterConfig
@@ -1838,7 +1853,7 @@ void CMpcVideoRenderer::DoAfterChangingDevice()
 
 LRESULT CMpcVideoRenderer::OnReceiveMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	if (m_hWndDrain && !InSendMessage() && !m_bExclusiveScreen) {
+	if (m_hWndDrain && !InSendMessage() && (!m_bExclusiveScreen || m_bWindowProcHookDisabled)) {
 		switch (uMsg) {
 			case WM_CHAR:
 			case WM_DEADCHAR:
@@ -1880,4 +1895,19 @@ LRESULT CMpcVideoRenderer::OnReceiveMessage(HWND hwnd, UINT uMsg, WPARAM wParam,
 	}
 
 	return DefWindowProcW(hwnd, uMsg, wParam, lParam);
+}
+
+bool CMpcVideoRenderer::CanUseThisFilterInstance()
+{
+	if (m_bWindowProcHookDisabled) {
+		return true;
+	}
+	if (!m_bInstanceCountIncemented) {
+		if (g_nInstance > 0) {
+			return false;
+		}
+		g_nInstance++;
+		m_bInstanceCountIncemented = true;
+	}
+	return true;
 }
