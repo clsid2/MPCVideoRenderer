@@ -702,9 +702,11 @@ STDMETHODIMP CMpcVideoRenderer::NonDelegatingQueryInterface(REFIID riid, void** 
 	if (riid == __uuidof(ISubRenderOptions)) {
 		return GetInterface((ISubRenderOptions*)this, ppv);
 	}
+	/*
 	if (riid == __uuidof(IMPCVRSubclassReplacement)) {
 		return GetInterface((IMPCVRSubclassReplacement*)this, ppv);
 	}
+	*/
 	return __super::NonDelegatingQueryInterface(riid, ppv);
 }
 
