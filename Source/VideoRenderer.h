@@ -32,6 +32,7 @@
 #include <ID3DFullscreenControl.h>
 #include <FilterInterfacesImpl.h>
 #include <SubRenderIntf.h>
+#include "../Include/IMPCVRSubclassReplacement.h"
 #include "SubPic/ISubPic.h"
 
 const AMOVIESETUP_MEDIATYPE sudPinTypesIn[] = {
@@ -88,6 +89,7 @@ class __declspec(uuid("71F080AA-8661-4093-B15E-4F6903E77D0A"))
 	, public CExFilterConfigImpl
 	, public ID3DFullscreenControl
 	, public ISubRenderConsumer2
+	, public IMPCVRSubclassReplacement
 {
 private:
 	friend class CVideoRendererInputPin;
@@ -139,6 +141,8 @@ private:
 
 	CComPtr<ISubPicProvider>  m_pSubPicProvider;
 	CComPtr<ISubPicQueue>     m_pSubPicQueue;
+
+	bool m_bWindowProcHookDisabled = false;
 
 public:
 	CMpcVideoRenderer(LPUNKNOWN pUnk, HRESULT* phr);
@@ -318,6 +322,10 @@ public:
 	STDMETHODIMP SetDouble(LPCSTR field, double value) { return E_INVALIDARG; }
 	STDMETHODIMP SetString(LPCSTR field, LPWSTR value, int chars) { return E_INVALIDARG; }
 	STDMETHODIMP SetBin(LPCSTR field, LPVOID value, int size) { return E_INVALIDARG; }
+
+	// IMPCVRSubclassReplacement
+	STDMETHODIMP_(void) DisableSubclassing() { m_bWindowProcHookDisabled = true; };
+	STDMETHODIMP_(bool) WindowProcFromParent(HWND hwnd, UINT uMsg, WPARAM* wParam, LPARAM* lParam, LRESULT* result);
 
 	CComPtr<ISubPic> GetSubPic(REFERENCE_TIME rtStart);
 
