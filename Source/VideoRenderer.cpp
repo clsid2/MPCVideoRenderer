@@ -330,7 +330,7 @@ CMpcVideoRenderer::~CMpcVideoRenderer()
 
 	UnregisterClassW(g_szClassName, g_hInst);
 
-	if (m_hWndParentMain) {
+	if (m_hWndParentMain && !m_bWindowProcHookDisabled) {
 		RemoveParentWndProc(m_hWndParentMain);
 	}
 
@@ -702,6 +702,9 @@ STDMETHODIMP CMpcVideoRenderer::NonDelegatingQueryInterface(REFIID riid, void** 
 	if (riid == __uuidof(ISubRenderOptions)) {
 		return GetInterface((ISubRenderOptions*)this, ppv);
 	}
+	if (riid == __uuidof(IMPCVRSubclassReplacement)) {
+		return GetInterface((IMPCVRSubclassReplacement*)this, ppv);
+	}
 	return __super::NonDelegatingQueryInterface(riid, ppv);
 }
 
@@ -1047,7 +1050,7 @@ HRESULT CMpcVideoRenderer::Init(const bool bCreateWindow/* = false*/)
 	}
 
 	if (hwnd != m_hWndParentMain) {
-		if (m_hWndParentMain) {
+		if (m_hWndParentMain && !m_bWindowProcHookDisabled) {
 			RemoveParentWndProc(m_hWndParentMain);
 		}
 
@@ -1058,12 +1061,14 @@ HRESULT CMpcVideoRenderer::Init(const bool bCreateWindow/* = false*/)
 			m_hWndParentMain = hwnd;
 		}
 
-		auto lpPreviousProc = SetWindowLongPtrW(m_hWndParentMain, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(ParentWndProc));
-		if (lpPreviousProc && lpPreviousProc != reinterpret_cast<LONG_PTR>(ParentWndProc)) {
-			SetPropW(m_hWndParentMain, g_pszOldParentWndProc, reinterpret_cast<HANDLE>(lpPreviousProc));
-			SetPropW(m_hWndParentMain, g_pszThis, reinterpret_cast<HANDLE>(this));
-		} else {
-			ASSERT(false);
+		if (!m_bWindowProcHookDisabled) {
+			auto lpPreviousProc = SetWindowLongPtrW(m_hWndParentMain, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(ParentWndProc));
+			if (lpPreviousProc && lpPreviousProc != reinterpret_cast<LONG_PTR>(ParentWndProc)) {
+				SetPropW(m_hWndParentMain, g_pszOldParentWndProc, reinterpret_cast<HANDLE>(lpPreviousProc));
+				SetPropW(m_hWndParentMain, g_pszThis, reinterpret_cast<HANDLE>(this));
+			} else {
+				ASSERT(false);
+			}
 		}
 	}
 
@@ -1354,6 +1359,25 @@ STDMETHODIMP CMpcVideoRenderer::SetCallback11(ISubRender11Callback* cb)
 	m_pSub11CallBack = cb;
 
 	return S_OK;
+}
+
+// IMPCVRSubclassReplacement
+STDMETHODIMP_(bool) CMpcVideoRenderer::WindowProcFromParent(HWND hwnd, UINT uMsg, WPARAM* wParam, LPARAM* lParam, LRESULT* result)
+{
+	if (uMsg == WM_DISPLAYCHANGE) {
+		DLog(L"WM_DISPLAYCHANGE");
+		OnDisplayModeChange(true);
+	} else if (uMsg == WM_MOVE) {
+			if (m_bExclusiveScreen) {
+				DLog(L"WM_MOVE exclusive");
+			} else {
+				DLog(L"WM_MOVE");
+				OnWindowMove();
+			}
+		
+	}
+
+	return false;
 }
 
 // IExFilterConfig
@@ -1838,7 +1862,7 @@ void CMpcVideoRenderer::DoAfterChangingDevice()
 
 LRESULT CMpcVideoRenderer::OnReceiveMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	if (m_hWndDrain && !InSendMessage() && !m_bExclusiveScreen) {
+	if (m_hWndDrain && !InSendMessage() /*&& (!m_bExclusiveScreen || m_bWindowProcHookDisabled)*/) {
 		switch (uMsg) {
 			case WM_CHAR:
 			case WM_DEADCHAR:
