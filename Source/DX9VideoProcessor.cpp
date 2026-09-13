@@ -1064,6 +1064,8 @@ BOOL CDX9VideoProcessor::VerifyMediaType(const CMediaType* pmt)
 
 BOOL CDX9VideoProcessor::GetAlignmentSize(const CMediaType& mt, SIZE& Size)
 {
+	CheckPointer(m_pD3DDevEx, E_FAIL);
+
 	if ((m_srcDXVA2Format != D3DFMT_UNKNOWN && mt == m_pFilter->m_inputMT) || InitMediaType(&mt)) {
 		const auto& FmtParams = GetFmtConvParams(&mt);
 

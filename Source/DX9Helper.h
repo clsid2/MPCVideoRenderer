@@ -40,6 +40,10 @@ struct Tex_t
 	HRESULT Create(IDirect3DDevice9Ex* pDevice, const D3DFORMAT format, const UINT width, const UINT height, DWORD usage) {
 		Release();
 
+		if (!pDevice) {
+			return E_FAIL;
+		}
+
 		HRESULT hr = pDevice->CreateTexture(width, height, 1, usage, format, D3DPOOL_DEFAULT, &pTexture, nullptr);
 		if (S_OK == hr) {
 			hr = pTexture->GetSurfaceLevel(0, &pSurface);
