@@ -69,6 +69,9 @@ protected:
 	bool m_bHdrLocalToneMapping            = false;
 	int  m_iHdrLocalToneMappingType        = 0;
 	int  m_iHdrDisplayMaxNits              = 1000;
+	bool m_bHdrMeasurePeak                 = false;
+	int  m_iHdrPeakWindowMs                = HDR_PEAK_WINDOW_DEF;
+	int  m_iHdrPeakFloorNits               = 0;
 	int  m_iHdrToggleDisplay               = HDRTD_Disabled;
 	int  m_iHdrOsdBrightness               = 0;
 	bool m_bConvertToSdr                   = true;

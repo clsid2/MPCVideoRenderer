@@ -410,6 +410,9 @@ CDX11VideoProcessor::CDX11VideoProcessor(CMpcVideoRenderer* pFilter, const Setti
 	m_bHdrLocalToneMapping = config.bHdrLocalToneMapping;
 	m_iHdrLocalToneMappingType = config.iHdrLocalToneMappingType;
 	m_iHdrDisplayMaxNits   = config.iHdrDisplayMaxNits;
+	m_bHdrMeasurePeak      = config.bHdrMeasurePeak;
+	m_iHdrPeakWindowMs     = config.iHdrPeakWindowMs;
+	m_iHdrPeakFloorNits    = config.iHdrPeakFloorNits;
 	m_iHdrToggleDisplay    = config.iHdrToggleDisplay;
 	m_iHdrOsdBrightness    = config.iHdrOsdBrightness;
 	m_bConvertToSdr        = config.bConvertToSdr;
@@ -714,6 +717,7 @@ void CDX11VideoProcessor::ReleaseDevice()
 	m_pPSConvertColorDeint.Release();
 
 	m_pPSHDR10ToneMapping.Release();
+	ReleaseHdrMeasure();
 
 	m_pShaderUpscaleX.Release();
 	m_pShaderUpscaleY.Release();
@@ -931,27 +935,31 @@ void CDX11VideoProcessor::SetShaderLuminanceParams()
 
 void CDX11VideoProcessor::SetHDR10ShaderParams(float masteringMinLuminanceNits, float masteringMaxLuminanceNits,
 											   float maxCLL, float maxFALL,
-											   float displayMaxNits, int toneMappingType)
+											   float displayMaxNits, int toneMappingType, bool allowMeasure)
 {
+	if (!m_pPSHDR10ToneMapping) {
+		EXECUTE_ASSERT(S_OK == CreateHDR10ToneMappingShader());
+		DLogIf(m_pPSHDR10ToneMapping, L"CDX11VideoProcessor::SetHDR10ShaderParams() : m_pPSHDR10ToneMapping({}) created", m_iHdrLocalToneMappingType);
+
+		UpdatePostScaleTexures();
+	}
+
+	// one decision, made after the shader exists, used by the constant buffer and by the render pass
+	m_bHdrMeasureActive = allowMeasure && UseHdrMeasure();
+
+
 	if (masteringMinLuminanceNits <= 0.f) masteringMinLuminanceNits = 0.f;
 	if (masteringMaxLuminanceNits <= 10.f) masteringMaxLuminanceNits = 1000.f;
 	if (maxCLL <= 10.f) maxCLL = masteringMaxLuminanceNits;
 	if (maxFALL <= 1.f) maxFALL = maxCLL;
 	if (displayMaxNits < 100.f || displayMaxNits > 10000.f) displayMaxNits = 1000.f;
-	if (toneMappingType < 1 || toneMappingType > 6) toneMappingType = 1;
+	if (toneMappingType < 1 || toneMappingType > 7) toneMappingType = 1;
 
 	const HDRParamsConstantBuffer_t cbuffer = {
 		masteringMinLuminanceNits, masteringMaxLuminanceNits,
 		maxCLL, maxFALL,
-		displayMaxNits, static_cast<UINT>(toneMappingType)
+		displayMaxNits, static_cast<UINT>(toneMappingType), m_bHdrMeasureActive ? 1u : 0u, 0.0f
 	};
-
-	if (!m_pPSHDR10ToneMapping) {
-		EXECUTE_ASSERT(S_OK == CreatePShaderFromResource(&m_pPSHDR10ToneMapping, IDF_PS_11_HDR10_TONEMAP));
-		DLogIf(m_pPSHDR10ToneMapping, L"CDX11VideoProcessor::SetHDR10ShaderParams() : m_pPSHDR10ToneMapping({}) created", m_iHdrLocalToneMappingType);
-
-		UpdatePostScaleTexures();
-	}
 
 	if (m_pHDR10ToneMappingConstants) {
 		if (memcmp(&m_lastHDRParamsConstantBuffer, &cbuffer, sizeof(cbuffer)) == 0) {
@@ -974,6 +982,258 @@ void CDX11VideoProcessor::SetHDR10ShaderParams(float masteringMinLuminanceNits, 
 	}
 
 	m_lastHDRParamsConstantBuffer = cbuffer;
+}
+
+// Tuning of the per-frame HDR peak measurement
+constexpr UINT  kHdrHistBins       = 1024;    // must match HIST_BINS in cs_hdr_hist.hlsl and cs_hdr_resolve.hlsl
+constexpr float kHdrPeakFraction   = 1.0e-4f; // share of pixels that may be brighter than the reported peak
+constexpr float kHdrReleaseSeconds = 1.0f;    // time for the peak to relax towards a lower measurement
+constexpr float kHdrSceneCutPQ     = 0.10f;   // a change larger than this (in PQ) is taken as a scene change
+constexpr UINT  kHdrStateHead      = 5;       // must match STATE_HEAD in cs_hdr_resolve.hlsl
+constexpr UINT  kHdrWindowFrames   = 512;     // must match WINDOW_SIZE in cs_hdr_resolve.hlsl
+
+bool CDX11VideoProcessor::HdrMeasureSupported() const
+{
+	return m_pDevice && m_pDevice->GetFeatureLevel() >= D3D_FEATURE_LEVEL_11_0;
+}
+
+HRESULT CDX11VideoProcessor::CreateHDR10ToneMappingShader()
+{
+	m_pPSHDR10ToneMapping.Release();
+	m_bHdrMeasureShader = false;
+
+	if (m_bHdrMeasurePeak && HdrMeasureSupported() && SUCCEEDED(InitHdrMeasure())) {
+		const HRESULT hr = CreatePShaderFromResource(&m_pPSHDR10ToneMapping, IDF_PS_11_HDR10_TONEMAP_MEASURED);
+		if (SUCCEEDED(hr)) {
+			m_bHdrMeasureShader = true;
+			return hr;
+		}
+		DLog(L"CDX11VideoProcessor::CreateHDR10ToneMappingShader() : the measuring variant failed with error {}, using the static one", HR2Str(hr));
+	}
+
+	return CreatePShaderFromResource(&m_pPSHDR10ToneMapping, IDF_PS_11_HDR10_TONEMAP);
+}
+
+HRESULT CDX11VideoProcessor::InitHdrMeasure()
+{
+	if (m_pHdrStateBuffer) {
+		return S_OK;
+	}
+	if (!HdrMeasureSupported()) {
+		return E_NOTIMPL;
+	}
+
+	auto CreateCS = [this](CComPtr<ID3D11ComputeShader>& pShader, UINT resid) {
+		LPVOID data;
+		DWORD size;
+		HRESULT hr = GetDataFromResource(data, size, resid);
+		if (SUCCEEDED(hr)) {
+			hr = m_pDevice->CreateComputeShader(data, size, nullptr, &pShader);
+		}
+		return hr;
+	};
+
+	HRESULT hr = CreateCS(m_pCSHdrHist, IDF_CS_11_HDR_HIST);
+	if (SUCCEEDED(hr)) {
+		hr = CreateCS(m_pCSHdrResolve, IDF_CS_11_HDR_RESOLVE);
+	}
+
+	// the histogram, one counter per bin
+	if (SUCCEEDED(hr)) {
+		const std::vector<UINT> zeros(kHdrHistBins, 0);
+		const D3D11_BUFFER_DESC desc = {
+			.ByteWidth = kHdrHistBins * sizeof(UINT),
+			.Usage = D3D11_USAGE_DEFAULT,
+			.BindFlags = D3D11_BIND_UNORDERED_ACCESS,
+			.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED,
+			.StructureByteStride = sizeof(UINT),
+		};
+		const D3D11_SUBRESOURCE_DATA init = { zeros.data(), 0, 0 };
+		hr = m_pDevice->CreateBuffer(&desc, &init, &m_pHdrHistBuffer);
+	}
+	if (SUCCEEDED(hr)) {
+		D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+		uavDesc.Format = DXGI_FORMAT_UNKNOWN;
+		uavDesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+		uavDesc.Buffer.NumElements = kHdrHistBins;
+		hr = m_pDevice->CreateUnorderedAccessView(m_pHdrHistBuffer, &uavDesc, &m_pHdrHistUAV);
+	}
+
+	// the smoothed result and the window of frame peaks (see the layout in cs_hdr_resolve.hlsl)
+	if (SUCCEEDED(hr)) {
+		const std::vector<float> zeros((kHdrStateHead + kHdrWindowFrames) * 4, 0.0f);
+		const D3D11_BUFFER_DESC desc = {
+			.ByteWidth = static_cast<UINT>(zeros.size() * sizeof(float)),
+			.Usage = D3D11_USAGE_DEFAULT,
+			.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE,
+			.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED,
+			.StructureByteStride = 4 * sizeof(float),
+		};
+		const D3D11_SUBRESOURCE_DATA init = { zeros.data(), 0, 0 };
+		hr = m_pDevice->CreateBuffer(&desc, &init, &m_pHdrStateBuffer);
+	}
+	if (SUCCEEDED(hr)) {
+		D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+		uavDesc.Format = DXGI_FORMAT_UNKNOWN;
+		uavDesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+		uavDesc.Buffer.NumElements = kHdrStateHead + kHdrWindowFrames;
+		hr = m_pDevice->CreateUnorderedAccessView(m_pHdrStateBuffer, &uavDesc, &m_pHdrStateUAV);
+	}
+	if (SUCCEEDED(hr)) {
+		D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+		srvDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+		srvDesc.Buffer.NumElements = 4;
+		hr = m_pDevice->CreateShaderResourceView(m_pHdrStateBuffer, &srvDesc, &m_pHdrStateSRV);
+	}
+
+	// constants for the two passes
+	if (SUCCEEDED(hr)) {
+		D3D11_BUFFER_DESC desc = {
+			.ByteWidth = sizeof(HdrMeasureConstants_t),
+			.Usage = D3D11_USAGE_DEFAULT,
+			.BindFlags = D3D11_BIND_CONSTANT_BUFFER,
+		};
+		hr = m_pDevice->CreateBuffer(&desc, nullptr, &m_pHdrMeasureConstants);
+		if (SUCCEEDED(hr)) {
+			desc.ByteWidth = sizeof(HdrResolveConstants_t);
+			hr = m_pDevice->CreateBuffer(&desc, nullptr, &m_pHdrResolveConstants);
+		}
+	}
+
+	// for the statistics only, so that a failure here is not fatal
+	{
+		const D3D11_BUFFER_DESC desc = {
+			.ByteWidth = 64,
+			.Usage = D3D11_USAGE_STAGING,
+			.CPUAccessFlags = D3D11_CPU_ACCESS_READ,
+		};
+		m_pDevice->CreateBuffer(&desc, nullptr, &m_pHdrStateStaging);
+	}
+
+	if (FAILED(hr)) {
+		DLog(L"CDX11VideoProcessor::InitHdrMeasure() : failed with error {}", HR2Str(hr));
+		ReleaseHdrMeasure();
+		return hr;
+	}
+
+	DLog(L"CDX11VideoProcessor::InitHdrMeasure() : ready");
+	return S_OK;
+}
+
+void CDX11VideoProcessor::ReleaseHdrMeasure()
+{
+	m_bHdrMeasureShader = false;
+	m_bHdrMeasureActive = false;
+	m_bHdrStatsCopyPending = false;
+	m_fHdrMeasuredPeakNits = 0.0f;
+	m_fHdrMeasuredAvgNits = 0.0f;
+	m_fHdrSmoothedPeakNits = 0.0f;
+	m_fHdrMeasuredMinNits = 0.0f;
+	m_fHdrSmoothedMinNits = 0.0f;
+
+	m_pHdrStateStaging.Release();
+	m_pHdrResolveConstants.Release();
+	m_pHdrMeasureConstants.Release();
+	m_pHdrStateSRV.Release();
+	m_pHdrStateUAV.Release();
+	m_pHdrStateBuffer.Release();
+	m_pHdrHistUAV.Release();
+	m_pHdrHistBuffer.Release();
+	m_pCSHdrResolve.Release();
+	m_pCSHdrHist.Release();
+}
+
+// Measures the frame that the tone mapping is about to process and leaves the smoothed peak and
+// average in m_pHdrStateBuffer, where the tone mapping shader picks them up.
+HRESULT CDX11VideoProcessor::MeasureHdrPeak(const Tex2D_t& tex, const CRect& rect)
+{
+	if (!UseHdrMeasure() || !tex.pShaderResource) {
+		return E_ABORT;
+	}
+
+	CRect r;
+	r.IntersectRect(rect, CRect(0, 0, tex.desc.Width, tex.desc.Height));
+	if (r.IsRectEmpty()) {
+		return S_FALSE;
+	}
+
+	float frameTime = m_rtAvgTimePerFrame > 0 ? static_cast<float>(m_rtAvgTimePerFrame) / 10000000.0f : 1.0f / 24.0f;
+	if (m_bDeintDouble && m_bInterlaced && m_D3D11VP.IsReady()) {
+		frameTime *= 0.5f; // two Render() calls per source frame
+	}
+	frameTime = std::clamp(frameTime, 1.0f / 120.0f, 0.1f);
+
+	const HdrMeasureConstants_t measureConstants = {
+		{ static_cast<UINT>(r.left), static_cast<UINT>(r.top) },
+		{ static_cast<UINT>(r.Width()), static_cast<UINT>(r.Height()) }
+	};
+	// the peak is the mean of the frame peaks over the window; without one it rises at once and falls slowly
+	const HdrResolveConstants_t resolveConstants = {
+		frameTime, kHdrReleaseSeconds, kHdrSceneCutPQ, kHdrPeakFraction,
+		m_iHdrPeakWindowMs / 1000.0f, static_cast<float>(m_iHdrPeakFloorNits)
+	};
+	m_pDeviceContext->UpdateSubresource(m_pHdrMeasureConstants, 0, nullptr, &measureConstants, 0, 0);
+	m_pDeviceContext->UpdateSubresource(m_pHdrResolveConstants, 0, nullptr, &resolveConstants, 0, 0);
+
+	// the previous pass may have left this texture bound as the render target
+	m_pDeviceContext->OMSetRenderTargets(0, nullptr, nullptr);
+
+	// pass 1: histogram of the frame
+	ID3D11ShaderResourceView* pSRV = tex.pShaderResource;
+	ID3D11UnorderedAccessView* pUAVs[2] = { m_pHdrHistUAV, m_pHdrStateUAV };
+	m_pDeviceContext->CSSetShader(m_pCSHdrHist, nullptr, 0);
+	m_pDeviceContext->CSSetShaderResources(0, 1, &pSRV);
+	m_pDeviceContext->CSSetConstantBuffers(0, 1, &m_pHdrMeasureConstants.p);
+	m_pDeviceContext->CSSetUnorderedAccessViews(0, 1, pUAVs, nullptr);
+	m_pDeviceContext->Dispatch((r.Width() + 31) / 32, (r.Height() + 31) / 32, 1);
+
+	// pass 2: peak and average from the histogram, smoothed over time
+	pSRV = nullptr;
+	m_pDeviceContext->CSSetShaderResources(0, 1, &pSRV);
+	m_pDeviceContext->CSSetShader(m_pCSHdrResolve, nullptr, 0);
+	m_pDeviceContext->CSSetConstantBuffers(0, 1, &m_pHdrResolveConstants.p);
+	m_pDeviceContext->CSSetUnorderedAccessViews(0, 2, pUAVs, nullptr);
+	m_pDeviceContext->Dispatch(1, 1, 1);
+
+	// leave nothing bound: the state buffer is read as a shader resource next
+	ID3D11UnorderedAccessView* pNullUAVs[2] = {};
+	m_pDeviceContext->CSSetUnorderedAccessViews(0, 2, pNullUAVs, nullptr);
+	m_pDeviceContext->CSSetShader(nullptr, nullptr, 0);
+
+	return S_OK;
+}
+
+// Picks up the result of an earlier frame for the statistics. Never waits.
+void CDX11VideoProcessor::ReadHdrMeasureStats()
+{
+	if (!m_bShowStats || !m_pHdrStateStaging || !m_pHdrStateBuffer) {
+		m_bHdrStatsCopyPending = false;
+		return;
+	}
+
+	if (m_bHdrStatsCopyPending) {
+		D3D11_MAPPED_SUBRESOURCE mr;
+		const HRESULT hr = m_pDeviceContext->Map(m_pHdrStateStaging, 0, D3D11_MAP_READ, D3D11_MAP_FLAG_DO_NOT_WAIT, &mr);
+		if (SUCCEEDED(hr)) {
+			const float* p = static_cast<const float*>(mr.pData); // see the layout in cs_hdr_resolve.hlsl
+			m_fHdrMeasuredPeakNits = p[4];
+			m_fHdrMeasuredAvgNits  = p[5];
+			m_fHdrSmoothedPeakNits = p[6];
+			m_fHdrMeasuredMinNits  = p[8];
+			m_fHdrSmoothedMinNits  = p[9];
+			m_pDeviceContext->Unmap(m_pHdrStateStaging, 0);
+			m_bHdrStatsCopyPending = false;
+		} else if (hr != DXGI_ERROR_WAS_STILL_DRAWING) {
+			m_bHdrStatsCopyPending = false;
+		}
+	}
+
+	if (!m_bHdrStatsCopyPending) {
+		const D3D11_BOX box = { 0, 0, 0, 64, 1, 1 }; // the head of the state, not the window behind it
+		m_pDeviceContext->CopySubresourceRegion(m_pHdrStateStaging, 0, 0, 0, 0, m_pHdrStateBuffer, 0, &box);
+		m_bHdrStatsCopyPending = true;
+	}
 }
 
 void CDX11VideoProcessor::SetDolbyVisionDynamicParams()
@@ -1902,6 +2162,7 @@ BOOL CDX11VideoProcessor::InitMediaType(const CMediaType* pmt)
 	m_PSConvColorData.bEnable = false;
 
 	m_pPSHDR10ToneMapping.Release();
+	ReleaseHdrMeasure();
 	m_pHDR10ToneMappingConstants.Release();
 	m_pDoViDynamicConstants.Release();
 
@@ -2773,14 +3034,16 @@ HRESULT CDX11VideoProcessor::Render(int field, const REFERENCE_TIME frameStartTi
 		}
 
 		if (m_bHdrLocalToneMapping && m_currentSwapChainColorSpace == colorSpace) {
+			m_bHdrMeasureActive = false;
 			if (m_DoviExtensionMetadata.L1.present) {
 				SetHDR10ShaderParams(m_DoviExtensionMetadata.L1.min_pq, m_DoviExtensionMetadata.L1.max_pq,
 									 m_DoviExtensionMetadata.L1.max_pq, m_DoviExtensionMetadata.L1.avg_pq,
 									 m_iHdrDisplayMaxNits, m_iHdrLocalToneMappingType == 5 ? 6 : m_iHdrLocalToneMappingType);
 			} else if (m_lastHdr10.bValid) {
+				// the metadata is only the fallback once a frame has been measured
 				SetHDR10ShaderParams(m_lastHdr10.hdr10.MinMasteringLuminance, m_lastHdr10.hdr10.MaxMasteringLuminance,
 									 m_lastHdr10.hdr10.MaxContentLightLevel, m_lastHdr10.hdr10.MaxFrameAverageLightLevel,
-									 m_iHdrDisplayMaxNits, m_iHdrLocalToneMappingType);
+									 m_iHdrDisplayMaxNits, m_iHdrLocalToneMappingType, ShouldMeasureHdr());
 			}
 		}
 	}
@@ -3547,7 +3810,16 @@ HRESULT CDX11VideoProcessor::Process(ID3D11Texture2D* pRenderTarget, const CRect
 			if (m_pDoViDynamicConstants) {
 				m_pDeviceContext->PSSetConstantBuffers(1, 1, &m_pDoViDynamicConstants.p);
 			}
+			const bool bMeasured = m_bHdrMeasureActive && MeasureHdrPeak(*pInputTexture, rect) == S_OK;
+			if (bMeasured) {
+				m_pDeviceContext->PSSetShaderResources(1, 1, &m_pHdrStateSRV.p);
+			}
 			hr = TextureCopyRect(*pInputTexture, pRT, rect, rect, m_pPSHDR10ToneMapping, m_pHDR10ToneMappingConstants, 0, false);
+			if (bMeasured) {
+				ID3D11ShaderResourceView* pNullSRV = nullptr;
+				m_pDeviceContext->PSSetShaderResources(1, 1, &pNullSRV);
+				ReadHdrMeasureStats();
+			}
 		}
 
 		if (m_pPostScaleShaders.size()) {
@@ -3773,7 +4045,7 @@ HRESULT CDX11VideoProcessor::GetCurentImage(long *pDIBImage)
 		}
 
 		if (m_bHdrPassthroughSupport && m_bHdrLocalToneMapping) {
-			EXECUTE_ASSERT(S_OK == CreatePShaderFromResource(&m_pPSHDR10ToneMapping, IDF_PS_11_HDR10_TONEMAP));
+			EXECUTE_ASSERT(S_OK == CreateHDR10ToneMappingShader());
 			DLogIf(m_pPSHDR10ToneMapping, L"CDX11VideoProcessor::InitMediaType() m_pPSHDR10ToneMapping(type: '{}') created", m_iHdrLocalToneMappingType);
 		}
 	}
@@ -4118,6 +4390,15 @@ void CDX11VideoProcessor::Configure(const Settings_t& config)
 		m_iHdrDisplayMaxNits = config.iHdrDisplayMaxNits;
 		//changeHDR = true;
 	}
+
+	if (config.bHdrMeasurePeak != m_bHdrMeasurePeak) {
+		m_bHdrMeasurePeak = config.bHdrMeasurePeak;
+		changeHDR = changeHDR || m_bHdrLocalToneMapping;
+	}
+
+	// read every frame, nothing to rebuild
+	m_iHdrPeakWindowMs  = config.iHdrPeakWindowMs;
+	m_iHdrPeakFloorNits = config.iHdrPeakFloorNits;
 
 	if (config.iHdrToggleDisplay != m_iHdrToggleDisplay) {
 		if (config.iHdrToggleDisplay == HDRTD_Disabled || m_iHdrToggleDisplay == HDRTD_Disabled) {
@@ -4485,6 +4766,12 @@ void CDX11VideoProcessor::UpdateStatsStatic()
 								m_strStatsHDR.append(L" BT2390");
 							}
 							break;
+						case 6:
+							m_strStatsHDR.append(L" ST 2094-10");
+							break;
+						case 7:
+							m_strStatsHDR.append(L" Angry");
+							break;
 						default:
 							break;
 					}
@@ -4660,6 +4947,12 @@ HRESULT CDX11VideoProcessor::DrawStats(ID3D11Texture2D* pRenderTarget)
 		str_trim_end(str, ',');
 	}
 	str.append(m_strStatsHDR);
+	if (m_bHdrMeasureActive && m_fHdrMeasuredPeakNits > 0.0f) {
+		// the shader clamps the peak up to the display's own, so show what it actually used
+		const float usedNits = std::clamp(m_fHdrSmoothedPeakNits, static_cast<float>(m_iHdrDisplayMaxNits), 10000.0f);
+		str += std::format(L"\nHDR measured  : peak {:.0f} (used {:.0f}), average {:.0f}, min {:.2f} nits",
+			m_fHdrMeasuredPeakNits, usedNits, m_fHdrMeasuredAvgNits, m_fHdrSmoothedMinNits);
+	}
 	str.append(m_strStatsPresent);
 
 	str += std::format(L"\nFrames        : {:5}, skipped: {}/{}, failed: {}",

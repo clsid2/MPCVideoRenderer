@@ -44,6 +44,12 @@ private:
 	void SetControls();
 	void EnableControls();
 
+	bool m_bApplyingPreset = false;
+	bool ReadPeakWindowMs(int& windowMs);
+	bool ReadPeakFloorNits(int& floorNits);
+	void UpdatePreset();
+	void ApplyPreset(const int index);
+
 	HRESULT OnConnect(IUnknown* pUnknown) override;
 	HRESULT OnDisconnect() override;
 	HRESULT OnActivate() override;

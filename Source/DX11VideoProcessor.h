@@ -97,8 +97,9 @@ private:
 		float maxCLL;
 		float maxFALL;
 		float displayMaxNits;
-		UINT selection; // 1 = ACES, 2 = Reinhard, 3 = Habel, 4 = Möbius, 5 = BT2390, 6 = ST 2094-10
-		float padding[2];
+		UINT selection; // 1 = ACES, 2 = Reinhard, 3 = Habel, 4 = Möbius, 5 = BT2390, 6 = ST 2094-10, 7 = Angry
+		UINT useMeasured; // BT2390 and Angry: the peak comes from the per-frame measurement
+		float padding;
 	};
 	struct DoViDynamicConstantsBuffer_t {
 		float trim_chroma_weight;
@@ -114,6 +115,41 @@ private:
 	CComPtr<ID3D11Buffer> m_pHDR10ToneMappingConstants;
 	CComPtr<ID3D11Buffer> m_pDoViDynamicConstants;
 	CComPtr<ID3D11PixelShader> m_pPSHDR10ToneMapping;
+
+	// HDR per-frame peak measurement. Compute shaders, so it needs feature level 11.0.
+	// A histogram of the frame is built on the GPU and reduced to a smoothed peak and average,
+	// which the tone mapping pixel shader reads directly: no read-back, no latency.
+	struct HdrMeasureConstants_t {
+		UINT rectOrigin[2];
+		UINT rectSize[2];
+	};
+	struct HdrResolveConstants_t {
+		float frameTime;
+		float releaseTime;
+		float sceneCutPQ;
+		float peakFraction;
+		float windowTime;
+		float peakFloor;
+		float padding[2];
+	};
+	CComPtr<ID3D11ComputeShader>       m_pCSHdrHist;
+	CComPtr<ID3D11ComputeShader>       m_pCSHdrResolve;
+	CComPtr<ID3D11Buffer>              m_pHdrHistBuffer;
+	CComPtr<ID3D11UnorderedAccessView> m_pHdrHistUAV;
+	CComPtr<ID3D11Buffer>              m_pHdrStateBuffer;
+	CComPtr<ID3D11UnorderedAccessView> m_pHdrStateUAV;
+	CComPtr<ID3D11ShaderResourceView>  m_pHdrStateSRV;
+	CComPtr<ID3D11Buffer>              m_pHdrMeasureConstants;
+	CComPtr<ID3D11Buffer>              m_pHdrResolveConstants;
+	CComPtr<ID3D11Buffer>              m_pHdrStateStaging; // for the statistics only
+	bool  m_bHdrMeasureShader      = false; // the tone mapping shader in use is the variant that reads the measurement
+	bool  m_bHdrMeasureActive      = false; // the measurement is used for the frame being rendered
+	bool  m_bHdrStatsCopyPending   = false;
+	float m_fHdrMeasuredPeakNits   = 0.0f;
+	float m_fHdrMeasuredAvgNits    = 0.0f;
+	float m_fHdrSmoothedPeakNits   = 0.0f;
+	float m_fHdrMeasuredMinNits    = 0.0f;
+	float m_fHdrSmoothedMinNits    = 0.0f;
 
 	// D3D11 Shader Video Processor
 	CComPtr<ID3D11PixelShader> m_pPSConvertColor;
@@ -282,7 +318,19 @@ private:
 	void SetShaderConvertColorParams();
 	void SetShaderLuminanceParams();
 
-	void SetHDR10ShaderParams(float, float, float, float, float, int);
+	void SetHDR10ShaderParams(float, float, float, float, float, int, bool allowMeasure = false);
+	HRESULT CreateHDR10ToneMappingShader();
+	bool HdrMeasureSupported() const;
+	// Every curve has a measurement-safe form (see the note in ps_hdr10_tonemap.hlsl): the knee
+	// models take a fast peak, the adaptive and global ones a slow one that only follows a
+	// confirmed cut, so a single bright frame cannot move anyone's mid-tones.
+	// the models whose curve only moves above a knee; the others normalize the whole picture by the peak
+	bool ShouldMeasureHdr() const { return m_bHdrMeasurePeak && (m_iHdrLocalToneMappingType == 5 || m_iHdrLocalToneMappingType == 7); }
+	bool UseHdrMeasure() const { return m_bHdrMeasureShader && m_pHdrStateSRV && m_pCSHdrHist && m_pCSHdrResolve; }
+	HRESULT InitHdrMeasure();
+	void ReleaseHdrMeasure();
+	HRESULT MeasureHdrPeak(const Tex2D_t& tex, const CRect& rect);
+	void ReadHdrMeasureStats();
 	void SetDolbyVisionDynamicParams();
 
 	HRESULT SetShaderDoviCurvesPoly();

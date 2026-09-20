@@ -2,6 +2,11 @@
 ------------------------
 Added the ability to get the original frame size using IExFilterConfig::Flt_GetInt64("originalVideoSize").
 Fixed the initial inactivity of the "Apply" button.
+Added the option "Measure the brightness of each frame" for HDR tone mapping (Direct3D 11): the peak brightness of every frame is measured and used instead of MaxCLL from the file.
+BT.2390 and ST 2094-10 tone mapping keep saturated colors inside the display's range: a color that is too bright fades towards white.
+Added the "Angry" tone mapping model: a BT.2390 spline whose knee follows the display, which compresses saturated colors before they reach the peak and turns them paler instead of clipping them.
+Added presets for the HDR tone mapping options.
+Fixed BT.2390 tone mapping running past the end of its curve for pixels brighter than MaxCLL.
 Recommended MPC-BE 1.9.1.12 or newer.
 
 0.10.7.2560 - 2026-08-01

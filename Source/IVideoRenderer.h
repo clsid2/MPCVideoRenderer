@@ -91,6 +91,8 @@ enum :int {
 #define SDR_NITS_STEP  5
 
 constexpr inline auto HDR_NITS_DEF = 1000;
+constexpr inline auto HDR_PEAK_WINDOW_DEF = 3000; // ms
+constexpr inline auto HDR_PEAK_WINDOW_MAX = 10000;
 constexpr inline auto HDR_NITS_MIN = 100;
 constexpr inline auto HDR_NITS_MAX = 10000;
 
@@ -132,6 +134,9 @@ struct Settings_t {
 	bool bHdrLocalToneMapping;
 	int  iHdrLocalToneMappingType;
 	int iHdrDisplayMaxNits;
+	bool bHdrMeasurePeak; // appended last: hosts built against an older header still agree on the layout of everything before it
+	int  iHdrPeakWindowMs;
+	int  iHdrPeakFloorNits;
 
 	Settings_t() {
 		SetDefault();
@@ -182,6 +187,9 @@ struct Settings_t {
 		bConvertToSdr                   = true;
 		iHdrOsdBrightness               = 0;
 		iSDRDisplayNits                 = SDR_NITS_DEF;
+		bHdrMeasurePeak                 = false;
+		iHdrPeakWindowMs                = HDR_PEAK_WINDOW_DEF;
+		iHdrPeakFloorNits               = 0;
 	}
 };
 

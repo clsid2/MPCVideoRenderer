@@ -63,6 +63,9 @@
 #define OPT_HdrLocaLToneMapping            L"HdrLocalToneMapping"
 #define OPT_HdrLocaLToneMappingType        L"HdrLocalToneMappingType"
 #define OPT_HdrDisplayNits                 L"HdrDisplayNits"
+#define OPT_HdrMeasurePeak                 L"HdrMeasurePeak"
+#define OPT_HdrPeakWindow                  L"HdrPeakWindowMs"
+#define OPT_HdrPeakFloor                   L"HdrPeakFloorNits"
 #define OPT_HdrToggleDisplay               L"HdrToggleDisplay"
 #define OPT_HdrOsdBrightness               L"HdrOsdBrightness"
 #define OPT_ConvertToSdr                   L"ConvertToSdr"
@@ -272,10 +275,22 @@ CMpcVideoRenderer::CMpcVideoRenderer(LPUNKNOWN pUnk, HRESULT* phr)
 			m_Sets.bHdrLocalToneMapping = !!dw;
 		}
 		if (ERROR_SUCCESS == key.QueryDWORDValue(OPT_HdrLocaLToneMappingType, dw)) {
-			m_Sets.iHdrLocalToneMappingType = discard<int>(dw, 1, 1, 5);
+			m_Sets.iHdrLocalToneMappingType = discard<int>(dw, 1, 1, 7);
+			if (m_Sets.iHdrLocalToneMappingType == 6) {
+				m_Sets.iHdrLocalToneMappingType = 5; // ST 2094-10 is chosen by the renderer for Dolby Vision, not by the user
+			}
 		}
 		if (ERROR_SUCCESS == key.QueryDWORDValue(OPT_HdrDisplayNits, dw)) {
 			m_Sets.iHdrDisplayMaxNits = discard<int>(dw, HDR_NITS_DEF, HDR_NITS_MIN, HDR_NITS_MAX);
+		}
+		if (ERROR_SUCCESS == key.QueryDWORDValue(OPT_HdrMeasurePeak, dw)) {
+			m_Sets.bHdrMeasurePeak = !!dw;
+		}
+		if (ERROR_SUCCESS == key.QueryDWORDValue(OPT_HdrPeakWindow, dw)) {
+			m_Sets.iHdrPeakWindowMs = discard<int>(dw, HDR_PEAK_WINDOW_DEF, 0, HDR_PEAK_WINDOW_MAX);
+		}
+		if (ERROR_SUCCESS == key.QueryDWORDValue(OPT_HdrPeakFloor, dw)) {
+			m_Sets.iHdrPeakFloorNits = discard<int>(dw, 0, 0, HDR_NITS_MAX);
 		}
 		if (ERROR_SUCCESS == key.QueryDWORDValue(OPT_HdrToggleDisplay, dw)) {
 			m_Sets.iHdrToggleDisplay = discard<int>(dw, HDRTD_On, HDRTD_Disabled, HDRTD_OnOff);
@@ -1338,6 +1353,9 @@ STDMETHODIMP CMpcVideoRenderer::SaveSettings()
 		key.SetDWORDValue(OPT_HdrLocaLToneMapping, m_Sets.bHdrLocalToneMapping);
 		key.SetDWORDValue(OPT_HdrLocaLToneMappingType, m_Sets.iHdrLocalToneMappingType);
 		key.SetDWORDValue(OPT_HdrDisplayNits,      m_Sets.iHdrDisplayMaxNits);
+		key.SetDWORDValue(OPT_HdrMeasurePeak,      m_Sets.bHdrMeasurePeak);
+		key.SetDWORDValue(OPT_HdrPeakWindow,       m_Sets.iHdrPeakWindowMs);
+		key.SetDWORDValue(OPT_HdrPeakFloor,        m_Sets.iHdrPeakFloorNits);
 		key.SetDWORDValue(OPT_HdrToggleDisplay,    m_Sets.iHdrToggleDisplay);
 		key.SetDWORDValue(OPT_HdrOsdBrightness,    m_Sets.iHdrOsdBrightness);
 		key.SetDWORDValue(OPT_ConvertToSdr,        m_Sets.bConvertToSdr);

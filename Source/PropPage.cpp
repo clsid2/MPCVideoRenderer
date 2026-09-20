@@ -81,6 +81,96 @@ CVRMainPPage::~CVRMainPPage()
 	DLog(L"~CVRMainPPage()");
 }
 
+// A preset is a name for one combination of the HDR tone mapping settings. Nothing is stored for
+// it: the page shows the preset whose values are the current ones, and "Custom" when none is.
+struct HdrPreset_t {
+	const wchar_t* name;
+	int  type; // as iHdrLocalToneMappingType
+	bool measure;
+	int  windowMs;  // these two only count while the brightness is measured
+	int  floorNits;
+};
+static const HdrPreset_t s_HdrPresets[] = {
+	{ L"Standard", 5, false, HDR_PEAK_WINDOW_DEF, 0 },
+	{ L"Dynamic",  5, true,  HDR_PEAK_WINDOW_DEF, 0 },
+	{ L"Angry",    7, true,  3000,                600 },
+};
+
+bool CVRMainPPage::ReadPeakWindowMs(int& windowMs)
+{
+	wchar_t text[32] = {};
+	GetDlgItemTextW(IDC_EDIT_PEAKWINDOW, text, static_cast<int>(std::size(text)));
+	for (wchar_t& ch : text) {
+		if (ch == L',') {
+			ch = L'.'; // a decimal comma
+		}
+	}
+	wchar_t* end = nullptr;
+	const double windowSeconds = wcstod(text, &end);
+	if (end == text || *end != 0 || !(windowSeconds >= 0.0 && windowSeconds <= HDR_PEAK_WINDOW_MAX / 1000.0)) {
+		return false;
+	}
+	windowMs = static_cast<int>(windowSeconds * 1000.0 + 0.5);
+	return true;
+}
+
+bool CVRMainPPage::ReadPeakFloorNits(int& floorNits)
+{
+	BOOL translated = FALSE;
+	const UINT value = GetDlgItemInt(IDC_EDIT_PEAKFLOOR, &translated, FALSE);
+	if (!translated || value > static_cast<UINT>(HDR_NITS_MAX)) {
+		return false;
+	}
+	floorNits = static_cast<int>(value);
+	return true;
+}
+
+void CVRMainPPage::UpdatePreset()
+{
+	if (m_bApplyingPreset) {
+		return;
+	}
+	LONG_PTR found = -1;
+	int windowMs = 0;
+	int floorNits = 0;
+	if (m_SetsPP.bHdrLocalToneMapping && !m_SetsPP.bHdrPassthrough && ReadPeakWindowMs(windowMs) && ReadPeakFloorNits(floorNits)) {
+		for (int i = 0; i < static_cast<int>(std::size(s_HdrPresets)) && found < 0; i++) {
+			const HdrPreset_t& p = s_HdrPresets[i];
+			if (p.type == m_SetsPP.iHdrLocalToneMappingType && p.measure == m_SetsPP.bHdrMeasurePeak
+					&& (!p.measure || (p.windowMs == windowMs && p.floorNits == floorNits))) {
+				found = i;
+			}
+		}
+	}
+	ComboBox_SelectByItemData(m_hWnd, IDC_COMBO11, found);
+}
+
+void CVRMainPPage::ApplyPreset(const int index)
+{
+	if (index < 0 || index >= static_cast<int>(std::size(s_HdrPresets))) {
+		return;
+	}
+	const HdrPreset_t& p = s_HdrPresets[index];
+	m_SetsPP.bHdrPassthrough          = false;
+	m_SetsPP.bHdrLocalToneMapping     = true;
+	m_SetsPP.iHdrLocalToneMappingType = p.type;
+	m_SetsPP.bHdrMeasurePeak          = p.measure;
+
+	// only the controls a preset owns: anything typed elsewhere on the page stays as it is
+	m_bApplyingPreset = true;
+	ComboBox_SelectByItemData(m_hWnd, IDC_COMBO10, p.type);
+	CheckDlgButton(IDC_CHECK20, p.measure ? BST_CHECKED : BST_UNCHECKED);
+	if (p.measure) {
+		SetDlgItemTextW(IDC_EDIT_PEAKWINDOW, std::format(L"{:.1f}", p.windowMs / 1000.0).c_str());
+		SetDlgItemTextW(IDC_EDIT_PEAKFLOOR, std::to_wstring(p.floorNits).c_str());
+	}
+	m_bApplyingPreset = false;
+
+	SetDirty();
+	EnableControls();
+	UpdatePreset();
+}
+
 void CVRMainPPage::SetControls()
 {
 	CheckDlgButton(IDC_CHECK1, m_SetsPP.bUseD3D11             ? BST_CHECKED : BST_UNCHECKED);
@@ -107,6 +197,7 @@ void CVRMainPPage::SetControls()
 	}
 
 	CheckDlgButton(IDC_CHECK18, m_SetsPP.bHdrPreferDoVi       ? BST_CHECKED : BST_UNCHECKED);
+	CheckDlgButton(IDC_CHECK20, m_SetsPP.bHdrMeasurePeak      ? BST_CHECKED : BST_UNCHECKED);
 	CheckDlgButton(IDC_CHECK14, m_SetsPP.bConvertToSdr        ? BST_CHECKED : BST_UNCHECKED);
 
 	SendDlgItemMessageW(IDC_COMBO7, CB_SETCURSEL, m_SetsPP.iHdrToggleDisplay, 0);
@@ -133,6 +224,9 @@ void CVRMainPPage::SetControls()
 
 	m_SetsPP.iHdrDisplayMaxNits = discard<int>(m_SetsPP.iHdrDisplayMaxNits, HDR_NITS_DEF, HDR_NITS_MIN, HDR_NITS_MAX);
 	SetDlgItemTextW(IDC_EDIT_DISPLAYMAX, std::to_wstring(m_SetsPP.iHdrDisplayMaxNits).c_str());
+	SetDlgItemTextW(IDC_EDIT_PEAKWINDOW, std::format(L"{:.1f}", m_SetsPP.iHdrPeakWindowMs / 1000.0).c_str());
+	SetDlgItemTextW(IDC_EDIT_PEAKFLOOR, std::to_wstring(m_SetsPP.iHdrPeakFloorNits).c_str());
+	UpdatePreset();
 }
 
 void CVRMainPPage::EnableControls()
@@ -164,10 +258,20 @@ void CVRMainPPage::EnableControls()
 #endif
 	}
 
+	const BOOL bHdrPreset = IsWindows10OrGreater() && m_SetsPP.bUseD3D11;
+	GetDlgItem(IDC_STATIC103).EnableWindow(bHdrPreset);
+	GetDlgItem(IDC_COMBO11).EnableWindow(bHdrPreset);
+
 	GetDlgItem(IDC_STATIC8).EnableWindow(m_SetsPP.bConvertToSdr);
 	GetDlgItem(IDC_EDIT1).EnableWindow(m_SetsPP.bConvertToSdr);
 	GetDlgItem(IDC_SLIDER2).EnableWindow(m_SetsPP.bConvertToSdr);
 	GetDlgItem(IDC_EDIT_DISPLAYMAX).EnableWindow(m_SetsPP.bHdrLocalToneMapping);
+	GetDlgItem(IDC_CHECK20).EnableWindow(m_SetsPP.bUseD3D11 && m_SetsPP.bHdrLocalToneMapping);
+	const BOOL bMeasure = m_SetsPP.bUseD3D11 && m_SetsPP.bHdrLocalToneMapping && m_SetsPP.bHdrMeasurePeak;
+	GetDlgItem(IDC_STATIC101).EnableWindow(bMeasure);
+	GetDlgItem(IDC_EDIT_PEAKWINDOW).EnableWindow(bMeasure);
+	GetDlgItem(IDC_STATIC102).EnableWindow(bMeasure);
+	GetDlgItem(IDC_EDIT_PEAKFLOOR).EnableWindow(bMeasure);
 }
 
 HRESULT CVRMainPPage::OnConnect(IUnknown *pUnk)
@@ -292,7 +396,13 @@ HRESULT CVRMainPPage::OnActivate()
 	ComboBox_AddStringData(m_hWnd, IDC_COMBO10, L"Reinhard", 2);
 	ComboBox_AddStringData(m_hWnd, IDC_COMBO10, L"Hable", 3);
 	ComboBox_AddStringData(m_hWnd, IDC_COMBO10, L"Mobius", 4);
-	ComboBox_AddStringData(m_hWnd, IDC_COMBO10, L"BT2390/ST 2094-10", 5);
+	ComboBox_AddStringData(m_hWnd, IDC_COMBO10, L"BT2390", 5);
+	ComboBox_AddStringData(m_hWnd, IDC_COMBO10, L"Angry", 7);
+
+	ComboBox_AddStringData(m_hWnd, IDC_COMBO11, L"Custom", -1);
+	for (int i = 0; i < static_cast<int>(std::size(s_HdrPresets)); i++) {
+		ComboBox_AddStringData(m_hWnd, IDC_COMBO11, s_HdrPresets[i].name, i);
+	}
 
 	SetControls();
 
@@ -307,6 +417,28 @@ HRESULT CVRMainPPage::OnActivate()
 		"Requires hardware and driver support:\n"
 		"- Intel Graphics UHD 610 or later\n"
 		"- Nvidia RTX (x64 only)");
+	AddHint(IDC_COMBO11,
+		L"Sets the tone mapping options below in one go.\n"
+		"Standard: BT2390 from the file's metadata.\n"
+		"Dynamic: BT2390 from the measured brightness of each frame.\n"
+		"Angry: the Angry model from the measured brightness of each frame,\n"
+		"with a minimum peak of 600 nits.\n"
+		"Custom is shown when the options match none of them.");
+	AddHint(IDC_EDIT_PEAKWINDOW,
+		L"The peak used is the average of the measured peaks over this\n"
+		"many seconds, so a highlight that appears or goes is followed\n"
+		"by a smooth ramp of that length. It starts afresh at a scene change.\n"
+		"0: the peak rises at once and falls back over about a second.");
+	AddHint(IDC_EDIT_PEAKFLOOR,
+		L"The peak used is never lower than this, so dim scenes are not\n"
+		"brightened to fill the display. 0 turns it off.");
+	AddHint(IDC_CHECK20,
+		L"Measures the brightness of every frame and uses it instead of\n"
+		"the MaxCLL value from the file, which is often wrong.\n"
+		"Used by BT2390 and Angry, where only the highlights move with it.\n"
+		"The other models keep using the file's values.\n"
+		"Available for Direct3D 11. Not used for Dolby Vision content\n"
+		"that carries its own per-frame metadata.");
 	AddHint(IDC_CHECK19,
 		L"Available for Direct3D 11.\n"
 		"Requires hardware and driver support:\n"
@@ -420,6 +552,13 @@ INT_PTR CVRMainPPage::OnReceiveMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
 				SetDirty();
 				return (LRESULT)1;
 			}
+			if (nID == IDC_CHECK20) {
+				m_SetsPP.bHdrMeasurePeak = IsDlgButtonChecked(IDC_CHECK20) == BST_CHECKED;
+				SetDirty();
+				EnableControls();
+				UpdatePreset();
+				return (LRESULT)1;
+			}
 			if (nID == IDC_CHECK14) {
 				m_SetsPP.bConvertToSdr = IsDlgButtonChecked(IDC_CHECK14) == BST_CHECKED;
 				if (!m_SetsPP.bConvertToSdr) {
@@ -526,6 +665,15 @@ INT_PTR CVRMainPPage::OnReceiveMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
 				}
 				return (LRESULT)1;
 			}
+			if (nID == IDC_COMBO11) {
+				const LONG_PTR preset = ComboBox_GetCurItemData(m_hWnd, IDC_COMBO11);
+				if (preset >= 0) {
+					ApplyPreset(static_cast<int>(preset));
+				} else {
+					UpdatePreset(); // "Custom" is a description, not a choice: show what the settings are
+				}
+				return (LRESULT)1;
+			}
 			if (nID == IDC_COMBO10) {
 				lValue = SendDlgItemMessageW(IDC_COMBO10, CB_GETCURSEL, 0, 0);
 				switch (lValue) {
@@ -562,17 +710,26 @@ INT_PTR CVRMainPPage::OnReceiveMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
 						m_SetsPP.bHdrLocalToneMapping = true;
 						m_SetsPP.iHdrLocalToneMappingType = 5;
 						break;
+					case 7:
+						m_SetsPP.bHdrPassthrough = false;
+						m_SetsPP.bHdrLocalToneMapping = true;
+						m_SetsPP.iHdrLocalToneMappingType = 7;
+						break;
 					default:
 						break;
 				}
 				SetDirty();
 				EnableControls();
+				UpdatePreset();
 				return (LRESULT)1;
 			}
 		}
 		if (action == EN_CHANGE) {
-			if (nID == IDC_EDIT_DISPLAYMAX) {
+			if (nID == IDC_EDIT_DISPLAYMAX || nID == IDC_EDIT_PEAKWINDOW || nID == IDC_EDIT_PEAKFLOOR) {
 				SetDirty();
+				if (nID != IDC_EDIT_DISPLAYMAX) {
+					UpdatePreset();
+				}
 			}
 		}
 	}
@@ -620,6 +777,20 @@ HRESULT CVRMainPPage::OnApplyChanges()
 	}
 	else {
 		m_SetsPP.iHdrDisplayMaxNits = displayMaxNits;
+	}
+
+	int windowMs = 0;
+	if (ReadPeakWindowMs(windowMs)) {
+		m_SetsPP.iHdrPeakWindowMs = windowMs;
+	} else {
+		MessageBoxW(L"Invalid window. Please enter a number of seconds from 0 to 10.", L"Error", MB_OK | MB_ICONERROR);
+	}
+
+	int peakFloorNits = 0;
+	if (ReadPeakFloorNits(peakFloorNits)) {
+		m_SetsPP.iHdrPeakFloorNits = peakFloorNits;
+	} else {
+		MessageBoxW(L"Invalid minimum peak. Please enter a number from 0 to 10000.", L"Error", MB_OK | MB_ICONERROR);
 	}
 
 	m_pVideoRenderer->SetSettings(m_SetsPP);
