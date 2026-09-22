@@ -81,6 +81,107 @@ CVRMainPPage::~CVRMainPPage()
 	DLog(L"~CVRMainPPage()");
 }
 
+// A preset is a name for one combination of the SDR conversion settings.  Nothing is stored for
+// it: the page shows the preset whose values are the current ones, and "Custom" when none is.
+struct SdrPreset_t {
+	const wchar_t* name;
+	bool toneMap;
+	bool measure;
+	int  windowMs;  // these three only count while the brightness is measured
+	int  floorNits;
+	bool sceneCuts;
+};
+static const SdrPreset_t s_SdrPresets[] = {
+	{ L"Fixed",    false, false, SDR_PEAK_WINDOW_DEF, SDR_PEAK_FLOOR_DEF, false }, // the fixed curve
+	{ L"Metadata", true,  false, SDR_PEAK_WINDOW_DEF, SDR_PEAK_FLOOR_DEF, false }, // the curve from the file's peak
+	{ L"Angry",    true,  true,  3000,                640,                false }, // measured, as madVR does it
+	{ L"Angry+",   true,  true,  3000,                640,                true  }, // and restarted at scene changes
+};
+
+bool CVRMainPPage::ReadSdrPeakWindowMs(int& windowMs)
+{
+	wchar_t text[32] = {};
+	GetDlgItemTextW(IDC_EDIT_SDRWINDOW, text, static_cast<int>(std::size(text)));
+	for (wchar_t& ch : text) {
+		if (ch == L',') {
+			ch = L'.'; // a decimal comma
+		}
+	}
+	wchar_t* end = nullptr;
+	const double windowSeconds = wcstod(text, &end);
+	if (end == text || *end != 0 || !(windowSeconds >= SDR_PEAK_WINDOW_MIN / 1000.0 && windowSeconds <= SDR_PEAK_WINDOW_MAX / 1000.0)) {
+		return false;
+	}
+	windowMs = static_cast<int>(windowSeconds * 1000.0 + 0.5);
+	return true;
+}
+
+bool CVRMainPPage::ReadSdrPeakFloorNits(int& floorNits)
+{
+	BOOL translated = FALSE;
+	const UINT value = GetDlgItemInt(IDC_EDIT_SDRFLOOR, &translated, FALSE);
+	if (!translated || value > static_cast<UINT>(SDR_PEAK_FLOOR_MAX)) {
+		return false;
+	}
+	floorNits = static_cast<int>(value);
+	return true;
+}
+
+void CVRMainPPage::UpdateSdrPreset()
+{
+	if (m_bApplyingSdrPreset) {
+		return;
+	}
+	int windowMs = 0;
+	int floorNits = 0;
+	const bool bNumbers = ReadSdrPeakWindowMs(windowMs) && ReadSdrPeakFloorNits(floorNits);
+
+	LONG_PTR found = -1;
+	for (int i = 0; i < static_cast<int>(std::size(s_SdrPresets)) && found < 0; i++) {
+		const SdrPreset_t& p = s_SdrPresets[i];
+		if (p.toneMap != m_SetsPP.bSdrToneMapping) {
+			continue;
+		}
+		if (p.toneMap && p.measure != m_SetsPP.bSdrMeasurePeak) {
+			continue;
+		}
+		if (p.toneMap && p.measure && !(bNumbers && p.windowMs == windowMs && p.floorNits == floorNits
+				&& p.sceneCuts == m_SetsPP.bSdrPeakSceneCuts)) {
+			continue;
+		}
+		found = i;
+	}
+	ComboBox_SelectByItemData(m_hWnd, IDC_COMBO_SDRPRESET, found);
+}
+
+void CVRMainPPage::ApplySdrPreset(const int index)
+{
+	if (index < 0 || index >= static_cast<int>(std::size(s_SdrPresets))) {
+		return; // Custom
+	}
+	const SdrPreset_t& p = s_SdrPresets[index];
+	m_SetsPP.bSdrToneMapping = p.toneMap;
+	m_SetsPP.bSdrMeasurePeak = p.measure;
+	if (p.measure) {
+		m_SetsPP.bSdrPeakSceneCuts = p.sceneCuts;
+	}
+
+	// only the controls a preset owns: anything typed elsewhere on the page stays as it is
+	m_bApplyingSdrPreset = true;
+	CheckDlgButton(IDC_CHECK20, p.toneMap ? BST_CHECKED : BST_UNCHECKED);
+	CheckDlgButton(IDC_CHECK_SDRMEASURE, p.measure ? BST_CHECKED : BST_UNCHECKED);
+	if (p.measure) {
+		SetDlgItemTextW(IDC_EDIT_SDRWINDOW, std::format(L"{:.1f}", p.windowMs / 1000.0).c_str());
+		SetDlgItemTextW(IDC_EDIT_SDRFLOOR, std::to_wstring(p.floorNits).c_str());
+		CheckDlgButton(IDC_CHECK_SDRSCENECUTS, p.sceneCuts ? BST_CHECKED : BST_UNCHECKED);
+	}
+	m_bApplyingSdrPreset = false;
+
+	SetDirty();
+	EnableControls();
+	UpdateSdrPreset();
+}
+
 void CVRMainPPage::SetControls()
 {
 	CheckDlgButton(IDC_CHECK1, m_SetsPP.bUseD3D11             ? BST_CHECKED : BST_UNCHECKED);
@@ -108,6 +209,14 @@ void CVRMainPPage::SetControls()
 
 	CheckDlgButton(IDC_CHECK18, m_SetsPP.bHdrPreferDoVi       ? BST_CHECKED : BST_UNCHECKED);
 	CheckDlgButton(IDC_CHECK14, m_SetsPP.bConvertToSdr        ? BST_CHECKED : BST_UNCHECKED);
+	CheckDlgButton(IDC_CHECK20, m_SetsPP.bSdrToneMapping      ? BST_CHECKED : BST_UNCHECKED);
+	CheckDlgButton(IDC_CHECK_SDRMEASURE, m_SetsPP.bSdrMeasurePeak ? BST_CHECKED : BST_UNCHECKED);
+	CheckDlgButton(IDC_CHECK_SDRSCENECUTS, m_SetsPP.bSdrPeakSceneCuts ? BST_CHECKED : BST_UNCHECKED);
+	m_bApplyingSdrPreset = true; // filling the page is not an edit
+	SetDlgItemTextW(IDC_EDIT_SDRWINDOW, std::format(L"{:.1f}", m_SetsPP.iSdrPeakWindowMs / 1000.0).c_str());
+	SetDlgItemTextW(IDC_EDIT_SDRFLOOR, std::to_wstring(m_SetsPP.iSdrPeakFloorNits).c_str());
+	m_bApplyingSdrPreset = false;
+	UpdateSdrPreset();
 
 	SendDlgItemMessageW(IDC_COMBO7, CB_SETCURSEL, m_SetsPP.iHdrToggleDisplay, 0);
 	SendDlgItemMessageW(IDC_SLIDER1, TBM_SETPOS, 1, m_SetsPP.iHdrOsdBrightness);
@@ -164,6 +273,18 @@ void CVRMainPPage::EnableControls()
 #endif
 	}
 
+	GetDlgItem(IDC_CHECK20).EnableWindow(m_SetsPP.bConvertToSdr);
+	GetDlgItem(IDC_STATIC_SDRPRESET).EnableWindow(m_SetsPP.bConvertToSdr);
+	GetDlgItem(IDC_COMBO_SDRPRESET).EnableWindow(m_SetsPP.bConvertToSdr);
+	{
+		const BOOL bMeasure = m_SetsPP.bConvertToSdr && m_SetsPP.bSdrToneMapping;
+		GetDlgItem(IDC_CHECK_SDRMEASURE).EnableWindow(bMeasure);
+		const BOOL bTuning = bMeasure && m_SetsPP.bSdrMeasurePeak;
+		for (const int id : { IDC_STATIC_SDRWINDOW, IDC_EDIT_SDRWINDOW, IDC_STATIC_SDRWINDOWS,
+				IDC_STATIC_SDRFLOOR, IDC_EDIT_SDRFLOOR, IDC_STATIC_SDRFLOORNITS, IDC_CHECK_SDRSCENECUTS }) {
+			GetDlgItem(id).EnableWindow(bTuning);
+		}
+	}
 	GetDlgItem(IDC_STATIC8).EnableWindow(m_SetsPP.bConvertToSdr);
 	GetDlgItem(IDC_EDIT1).EnableWindow(m_SetsPP.bConvertToSdr);
 	GetDlgItem(IDC_SLIDER2).EnableWindow(m_SetsPP.bConvertToSdr);
@@ -294,6 +415,11 @@ HRESULT CVRMainPPage::OnActivate()
 	ComboBox_AddStringData(m_hWnd, IDC_COMBO10, L"Mobius", 4);
 	ComboBox_AddStringData(m_hWnd, IDC_COMBO10, L"BT2390/ST 2094-10", 5);
 
+	for (int i = 0; i < static_cast<int>(std::size(s_SdrPresets)); i++) {
+		ComboBox_AddStringData(m_hWnd, IDC_COMBO_SDRPRESET, s_SdrPresets[i].name, i);
+	}
+	ComboBox_AddStringData(m_hWnd, IDC_COMBO_SDRPRESET, L"Custom", -1);
+
 	SetControls();
 
 	SetCursor(m_hWnd, IDC_ARROW);
@@ -420,6 +546,26 @@ INT_PTR CVRMainPPage::OnReceiveMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
 				SetDirty();
 				return (LRESULT)1;
 			}
+			if (nID == IDC_CHECK20) {
+				m_SetsPP.bSdrToneMapping = IsDlgButtonChecked(IDC_CHECK20) == BST_CHECKED;
+				EnableControls();
+				UpdateSdrPreset();
+				SetDirty();
+				return (LRESULT)1;
+			}
+			if (nID == IDC_CHECK_SDRSCENECUTS) {
+				m_SetsPP.bSdrPeakSceneCuts = IsDlgButtonChecked(IDC_CHECK_SDRSCENECUTS) == BST_CHECKED;
+				UpdateSdrPreset();
+				SetDirty();
+				return (LRESULT)1;
+			}
+			if (nID == IDC_CHECK_SDRMEASURE) {
+				m_SetsPP.bSdrMeasurePeak = IsDlgButtonChecked(IDC_CHECK_SDRMEASURE) == BST_CHECKED;
+				EnableControls();
+				UpdateSdrPreset();
+				SetDirty();
+				return (LRESULT)1;
+			}
 			if (nID == IDC_CHECK14) {
 				m_SetsPP.bConvertToSdr = IsDlgButtonChecked(IDC_CHECK14) == BST_CHECKED;
 				if (!m_SetsPP.bConvertToSdr) {
@@ -449,6 +595,13 @@ INT_PTR CVRMainPPage::OnReceiveMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
 		}
 
 		if (action == CBN_SELCHANGE) {
+			if (nID == IDC_COMBO_SDRPRESET) {
+				const int sel = static_cast<int>(SendDlgItemMessageW(IDC_COMBO_SDRPRESET, CB_GETCURSEL, 0, 0));
+				if (sel != CB_ERR) {
+					ApplySdrPreset(static_cast<int>(SendDlgItemMessageW(IDC_COMBO_SDRPRESET, CB_GETITEMDATA, sel, 0)));
+				}
+				return (LRESULT)1;
+			}
 			if (nID == IDC_COMBO6) {
 				lValue = SendDlgItemMessageW(IDC_COMBO6, CB_GETCURSEL, 0, 0);
 				if (lValue != m_SetsPP.iResizeStats) {
@@ -572,6 +725,10 @@ INT_PTR CVRMainPPage::OnReceiveMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
 			if (nID == IDC_EDIT_DISPLAYMAX) {
 				SetDirty();
 			}
+			if ((nID == IDC_EDIT_SDRWINDOW || nID == IDC_EDIT_SDRFLOOR) && !m_bApplyingSdrPreset) {
+				SetDirty();
+				UpdateSdrPreset();
+			}
 		}
 	}
 	else if (uMsg == WM_HSCROLL) {
@@ -618,6 +775,19 @@ HRESULT CVRMainPPage::OnApplyChanges()
 	}
 	else {
 		m_SetsPP.iHdrDisplayMaxNits = displayMaxNits;
+	}
+
+	int windowMs = 0;
+	if (ReadSdrPeakWindowMs(windowMs)) {
+		m_SetsPP.iSdrPeakWindowMs = windowMs;
+	} else {
+		MessageBoxW(L"Invalid peak window. Please enter a number of seconds from 0 to 10.", L"Error", MB_OK | MB_ICONERROR);
+	}
+	int floorNits = 0;
+	if (ReadSdrPeakFloorNits(floorNits)) {
+		m_SetsPP.iSdrPeakFloorNits = floorNits;
+	} else {
+		MessageBoxW(L"Invalid peak floor. Please enter a number of nits from 0 to 10000.", L"Error", MB_OK | MB_ICONERROR);
 	}
 
 	m_pVideoRenderer->SetSettings(m_SetsPP);

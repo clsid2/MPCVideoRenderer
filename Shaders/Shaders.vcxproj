@@ -25,6 +25,9 @@
     <None Include="convert\hdr_tone_mapping.hlsl">
       <FileType>Document</FileType>
     </None>
+    <None Include="convert\hdr_tone_mapping_spline.hlsl">
+      <FileType>Document</FileType>
+    </None>
     <None Include="convert\conv_matrix.hlsl">
       <FileType>Document</FileType>
     </None>
@@ -73,6 +76,30 @@
     <FxCompile Include="d3d11\ps_fixconvert_pq_to_sdr.hlsl">
       <ShaderModel>4.0</ShaderModel>
       <ShaderType>Pixel</ShaderType>
+    </FxCompile>
+    <FxCompile Include="d3d11\ps_convert_pq_to_sdr_tonemap.hlsl">
+      <ShaderModel>4.0</ShaderModel>
+      <ShaderType>Pixel</ShaderType>
+    </FxCompile>
+    <FxCompile Include="d3d11\ps_fixconvert_pq_to_sdr_tonemap.hlsl">
+      <ShaderModel>4.0</ShaderModel>
+      <ShaderType>Pixel</ShaderType>
+    </FxCompile>
+    <FxCompile Include="d3d11\ps_convert_pq_to_sdr_tonemap_measured.hlsl">
+      <ShaderModel>5.0</ShaderModel>
+      <ShaderType>Pixel</ShaderType>
+    </FxCompile>
+    <FxCompile Include="d3d11\ps_fixconvert_pq_to_sdr_tonemap_measured.hlsl">
+      <ShaderModel>5.0</ShaderModel>
+      <ShaderType>Pixel</ShaderType>
+    </FxCompile>
+    <FxCompile Include="d3d11\cs_hdr_hist.hlsl">
+      <ShaderModel>5.0</ShaderModel>
+      <ShaderType>Compute</ShaderType>
+    </FxCompile>
+    <FxCompile Include="d3d11\cs_hdr_resolve.hlsl">
+      <ShaderModel>5.0</ShaderModel>
+      <ShaderType>Compute</ShaderType>
     </FxCompile>
     <FxCompile Include="d3d11\ps_fix_bt2020.hlsl">
       <ShaderModel>4.0</ShaderModel>

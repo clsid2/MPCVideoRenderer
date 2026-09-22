@@ -2,6 +2,7 @@
 ------------------------
 Added the ability to get the original frame size using IExFilterConfig::Flt_GetInt64("originalVideoSize").
 Fixed the initial inactivity of the "Apply" button.
+Added the option "Tone map using the content's brightness" for the HDR to SDR conversion: the curve is built from the brightness the file claims and the SDR display nits, instead of being fixed.
 Recommended MPC-BE 1.9.1.12 or newer.
 
 0.10.7.2560 - 2026-08-01

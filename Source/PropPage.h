@@ -32,6 +32,7 @@ class __declspec(uuid("DA46D181-07D6-441D-B314-019AEB10148A"))
 	Settings_t m_SetsPP;
 
 	int m_oldSDRDisplayNits = SDR_NITS_DEF;
+	bool m_bApplyingSdrPreset = false;
 
 	bool m_bActivated = false;
 	HWND m_hHint = nullptr;
@@ -43,6 +44,10 @@ public:
 private:
 	void SetControls();
 	void EnableControls();
+	void UpdateSdrPreset();
+	void ApplySdrPreset(const int index);
+	bool ReadSdrPeakWindowMs(int& windowMs);
+	bool ReadSdrPeakFloorNits(int& floorNits);
 
 	HRESULT OnConnect(IUnknown* pUnknown) override;
 	HRESULT OnDisconnect() override;
