@@ -2032,7 +2032,7 @@ HRESULT CDX11VideoProcessor::InitializeD3D11VP(const FmtConvParams_t& params, co
 			if (CheckDriverNVIDIA(572)) {
 				superRes = m_iVPSuperRes;
 			}
-		} else if (m_srcParams.CDepth == 8 && (m_InternalTexFmt == DXGI_FORMAT_B8G8R8A8_UNORM || !m_bACMEnabled || m_bVPUseRTXVideoHDR) || m_srcParams.CDepth > 8 && m_InternalTexFmt != DXGI_FORMAT_B8G8R8A8_UNORM && CheckDriverNVIDIA(576)) {
+		} else if (params.CDepth == 8 && (m_InternalTexFmt == DXGI_FORMAT_B8G8R8A8_UNORM || !m_bACMEnabled || m_bVPUseRTXVideoHDR) || params.CDepth > 8 && m_InternalTexFmt != DXGI_FORMAT_B8G8R8A8_UNORM && CheckDriverNVIDIA(576)) {
 			superRes = m_iVPSuperRes;
 		}
 	}
@@ -4035,6 +4035,7 @@ void CDX11VideoProcessor::Configure(const Settings_t& config)
 	if (config.iTexFormat != m_iTexFormat) {
 		m_iTexFormat = config.iTexFormat;
 		changeTextures = true;
+		changeSuperRes = true;
 	}
 
 	if (m_srcParams.cformat == CF_NV12) {
@@ -4062,6 +4063,7 @@ void CDX11VideoProcessor::Configure(const Settings_t& config)
 		m_bVPScaling = config.bVPScaling;
 		changeTextures = true;
 		changeVP = true; // temporary solution
+		changeSuperRes = true;
 	}
 
 	if (config.iChromaScaling != m_iChromaScaling) {
