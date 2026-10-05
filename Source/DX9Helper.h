@@ -189,7 +189,7 @@ struct ExternalPixelShader9_t
 	CComPtr<IDirect3DPixelShader9> shader;
 };
 
-UINT GetAdapter(HWND hWnd, IDirect3D9Ex* pD3D);
+UINT GetAdapter(HWND hWnd, IDirect3D9Ex* pD3D, UINT64 adapterLuid = 0);
 
 HRESULT Dump4ByteSurface(IDirect3DSurface9* pSurface, const wchar_t* filename);
 

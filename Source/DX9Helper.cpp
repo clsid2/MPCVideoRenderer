@@ -23,10 +23,23 @@
 #include "Helper.h"
 #include "DX9Helper.h"
 
-UINT GetAdapter(HWND hWnd, IDirect3D9Ex* pD3D)
+UINT GetAdapter(HWND hWnd, IDirect3D9Ex* pD3D, UINT64 adapterLuid)
 {
 	CheckPointer(hWnd, D3DADAPTER_DEFAULT);
 	CheckPointer(pD3D, D3DADAPTER_DEFAULT);
+
+	if (adapterLuid != 0) {
+		const UINT adapterCount = pD3D->GetAdapterCount();
+		for (UINT adapter = 0; adapter < adapterCount; ++adapter) {
+			LUID luid = {};
+			if (SUCCEEDED(pD3D->GetAdapterLUID(adapter, &luid))
+					&& luid.LowPart == static_cast<LONG>(static_cast<UINT32>(adapterLuid))
+					&& luid.HighPart == static_cast<LONG>(static_cast<UINT32>(adapterLuid >> 32))) {
+				return adapter;
+			}
+		}
+		return UINT_MAX;
+	}
 
 	const HMONITOR hMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
 	CheckPointer(hMonitor, D3DADAPTER_DEFAULT);
