@@ -132,6 +132,7 @@
 #define IDC_COMBO10                     1063
 #define IDC_STATIC99                    1064
 #define IDC_STATIC100                   1065
+#define IDC_COMBO_RENDERER_DEVICE       1071
 
 // Next default values for new objects
 // 

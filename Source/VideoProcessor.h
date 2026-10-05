@@ -118,6 +118,7 @@ protected:
 	bool CheckDoviMetadata(const MediaSideDataDOVIMetadata* pDOVIMetadata, const uint8_t maxReshapeMethon);
 
 	HWND m_hWnd = nullptr;
+	UINT64 m_rendererAdapterLuid = 0;
 	UINT m_nCurrentAdapter = {}; // redefine explicitly in subclasses
 	DWORD m_VendorId = 0;
 	std::wstring m_strAdapterDescription;

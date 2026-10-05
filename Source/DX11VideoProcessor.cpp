@@ -388,6 +388,7 @@ CDX11VideoProcessor::CDX11VideoProcessor(CMpcVideoRenderer* pFilter, const Setti
 	: CVideoProcessor(pFilter)
 {
 	m_bShowStats           = config.bShowStats;
+	m_rendererAdapterLuid  = config.iRendererAdapterLuid;
 	m_iResizeStats         = config.iResizeStats;
 	m_iTexFormat           = config.iTexFormat;
 	m_VPFormats            = config.VPFmts;
@@ -564,7 +565,7 @@ HRESULT CDX11VideoProcessor::Init(const HWND hwnd, const bool displayHdrChanged,
 	}
 
 	IDXGIAdapter* pDXGIAdapter = nullptr;
-	const UINT currentAdapter = GetAdapter(hwnd, m_pDXGIFactory1, &pDXGIAdapter);
+	const UINT currentAdapter = GetAdapter(hwnd, m_pDXGIFactory1, &pDXGIAdapter, m_rendererAdapterLuid);
 	CheckPointer(pDXGIAdapter, E_FAIL);
 	if (m_nCurrentAdapter == currentAdapter) {
 		SAFE_RELEASE(pDXGIAdapter);
@@ -4032,6 +4033,11 @@ void CDX11VideoProcessor::Configure(const Settings_t& config)
 		changeResizeStats = true;
 	}
 
+	if (config.iRendererAdapterLuid != m_rendererAdapterLuid) {
+		m_rendererAdapterLuid = config.iRendererAdapterLuid;
+		changeDevice = true;
+	}
+
 	if (config.iTexFormat != m_iTexFormat) {
 		m_iTexFormat = config.iTexFormat;
 		changeTextures = true;
@@ -4171,6 +4177,11 @@ void CDX11VideoProcessor::Configure(const Settings_t& config)
 			m_srcVideoTransferFunction = 0;
 			InitMediaType(&m_pFilter->m_inputMT);
 		}
+		return;
+	}
+
+	if (changeDevice) {
+		EXECUTE_ASSERT(S_OK == m_pFilter->Init(true));
 		return;
 	}
 

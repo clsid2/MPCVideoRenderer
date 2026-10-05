@@ -270,6 +270,7 @@ CDX9VideoProcessor::CDX9VideoProcessor(CMpcVideoRenderer* pFilter, const Setting
 	: CVideoProcessor(pFilter)
 {
 	m_bShowStats           = config.bShowStats;
+	m_rendererAdapterLuid  = config.iRendererAdapterLuid;
 	m_iResizeStats         = config.iResizeStats;
 	m_iTexFormat           = config.iTexFormat;
 	m_VPFormats            = config.VPFmts;
@@ -402,7 +403,11 @@ HRESULT CDX9VideoProcessor::InitInternal(bool bFullCreate, bool* pChangeDevice)
 
 	g_bInitVP = true;
 
-	const UINT currentAdapter = GetAdapter(m_hWnd, m_pD3DEx);
+	const UINT currentAdapter = GetAdapter(m_hWnd, m_pD3DEx, m_rendererAdapterLuid);
+	if (currentAdapter == UINT_MAX) {
+		DLog(L"CDX9VideoProcessor::InitInternal() : configured graphics adapter is no longer available");
+		return E_FAIL;
+	}
 	bool bTryToReset = !bFullCreate && (currentAdapter == m_nCurrentAdapter) && m_pD3DDevEx;
 	if (!bTryToReset) {
 		ReleaseDevice();
@@ -1967,6 +1972,11 @@ void CDX9VideoProcessor::Configure(const Settings_t& config)
 		changeResizeStats = true;
 	}
 
+	if (config.iRendererAdapterLuid != m_rendererAdapterLuid) {
+		m_rendererAdapterLuid = config.iRendererAdapterLuid;
+		changeDevice = true;
+	}
+
 	if (config.iTexFormat != m_iTexFormat) {
 		m_iTexFormat = config.iTexFormat;
 		changeTextures = true;
@@ -2050,6 +2060,11 @@ void CDX9VideoProcessor::Configure(const Settings_t& config)
 	// apply new settings
 
 	if (changeWindow) {
+		EXECUTE_ASSERT(S_OK == m_pFilter->Init(true));
+		return;
+	}
+
+	if (changeDevice) {
 		EXECUTE_ASSERT(S_OK == m_pFilter->Init(true));
 		return;
 	}
