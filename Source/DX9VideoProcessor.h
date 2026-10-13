@@ -70,6 +70,23 @@ private:
 
 	CComPtr<IDirect3DPixelShader9> m_pPSCorrection;
 	const wchar_t* m_strCorrection = nullptr;
+
+	// what the file says about its brightness, for the SDR tone mapping curve.  Kept from the
+	// last sample that carried it, as Direct3D 11 keeps m_lastHdr10.
+	float m_fSdrMetaMaxCLL = 0.0f;
+	float m_fSdrMetaMaxMasteringNits = 0.0f;
+
+	// the peak of each frame, taken by reduction because Direct3D 9 has no compute shader
+	CComPtr<IDirect3DPixelShader9> m_pPSHdrPeakFirst;
+	CComPtr<IDirect3DPixelShader9> m_pPSHdrPeakDown;
+	CComPtr<IDirect3DPixelShader9> m_pPSHdrPeakState;
+	std::vector<Tex_t> m_TexHdrPeak;      // each level a quarter of the one before, down to 1x1
+	Tex_t m_TexHdrState[2];               // 2x1, written one frame and read the next
+	CComPtr<IDirect3DSurface9> m_pHdrStateStaging;
+	int  m_nHdrStateWrite = 0;
+	bool m_bSdrMeasureActive = false;
+	bool m_bHdrStatsCopyPending = false;
+	float m_fHdrMeasuredPeakNits = 0.0f;  // for the statistics only
 	CComPtr<IDirect3DPixelShader9> m_pPSConvertColor;
 	CComPtr<IDirect3DPixelShader9> m_pPSConvertColorDeint;
 	struct {
@@ -203,6 +220,11 @@ private:
 	HRESULT UpdateConvertColorShader();
 
 	HRESULT DxvaVPPass(IDirect3DSurface9* pRenderTarget, const CRect& srcRect, const CRect& dstRect, const bool second);
+	float GetSdrToneMappingPeak() const;
+	bool HdrMeasureSupported();
+	HRESULT InitHdrMeasure(const UINT width, const UINT height);
+	void ReleaseHdrMeasure();
+	HRESULT MeasureHdrPeak(IDirect3DTexture9* pTexture, const CRect& rect);
 	HRESULT ConvertColorPass(IDirect3DSurface9* pRenderTarget);
 	HRESULT ResizeShaderPass(IDirect3DTexture9* pTexture, IDirect3DSurface9* pRenderTarget, const CRect& srcRect, const CRect& dstRect);
 	HRESULT FinalPass(IDirect3DTexture9* pTexture, IDirect3DSurface9* pRenderTarget, const CRect& srcRect, const CRect& dstRect);
