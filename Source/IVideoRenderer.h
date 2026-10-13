@@ -102,6 +102,7 @@ struct VPEnableFormats_t {
 };
 
 struct Settings_t {
+	UINT64 iRendererAdapterLuid;
 	bool bUseD3D11;
 	bool bShowStats;
 	int  iResizeStats;
@@ -138,6 +139,7 @@ struct Settings_t {
 	}
 
 	void SetDefault() {
+		iRendererAdapterLuid           = 0;
 		if (IsWindows8OrGreater()) {
 			bUseD3D11                   = true;
 		} else {

@@ -78,7 +78,7 @@ D3D11_TEXTURE2D_DESC CreateTex2DDesc(const DXGI_FORMAT format, const UINT width,
 	return desc;
 }
 
-UINT GetAdapter(HWND hWnd, IDXGIFactory1* pDXGIFactory, IDXGIAdapter** ppDXGIAdapter)
+UINT GetAdapter(HWND hWnd, IDXGIFactory1* pDXGIFactory, IDXGIAdapter** ppDXGIAdapter, UINT64 adapterLuid)
 {
 	*ppDXGIAdapter = nullptr;
 
@@ -89,6 +89,20 @@ UINT GetAdapter(HWND hWnd, IDXGIFactory1* pDXGIFactory, IDXGIAdapter** ppDXGIAda
 	UINT adapter = 0;
 	IDXGIAdapter* pDXGIAdapter = nullptr;
 	while (SUCCEEDED(pDXGIFactory->EnumAdapters(adapter, &pDXGIAdapter))) {
+		DXGI_ADAPTER_DESC adapterDesc = {};
+		const bool matchesSelectedAdapter = adapterLuid != 0
+			&& SUCCEEDED(pDXGIAdapter->GetDesc(&adapterDesc))
+			&& adapterDesc.AdapterLuid.LowPart == static_cast<LONG>(static_cast<UINT32>(adapterLuid))
+			&& adapterDesc.AdapterLuid.HighPart == static_cast<LONG>(static_cast<UINT32>(adapterLuid >> 32));
+		if (matchesSelectedAdapter) {
+			*ppDXGIAdapter = pDXGIAdapter;
+			return adapter;
+		}
+		if (adapterLuid != 0) {
+			SAFE_RELEASE(pDXGIAdapter);
+			adapter++;
+			continue;
+		}
 		UINT output = 0;
 		IDXGIOutput* pDXGIOutput = nullptr;
 		while (SUCCEEDED(pDXGIAdapter->EnumOutputs(output, &pDXGIOutput))) {

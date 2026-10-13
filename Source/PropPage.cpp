@@ -19,6 +19,7 @@
  */
 
 #include "stdafx.h"
+#include <dxgi1_2.h>
 #include "resource.h"
 #include "Helper.h"
 #include "DisplayConfig.h"
@@ -85,6 +86,13 @@ void CVRMainPPage::SetControls()
 {
 	CheckDlgButton(IDC_CHECK1, m_SetsPP.bUseD3D11             ? BST_CHECKED : BST_UNCHECKED);
 	CheckDlgButton(IDC_CHECK2, m_SetsPP.bShowStats            ? BST_CHECKED : BST_UNCHECKED);
+	SendDlgItemMessageW(IDC_COMBO_RENDERER_DEVICE, CB_SETCURSEL, 0, 0);
+	for (size_t index = 0; index < m_AdapterLuids.size(); ++index) {
+		if (m_AdapterLuids[index] == m_SetsPP.iRendererAdapterLuid) {
+			SendDlgItemMessageW(IDC_COMBO_RENDERER_DEVICE, CB_SETCURSEL, index + 1, 0);
+			break;
+		}
+	}
 
 	ComboBox_SelectByItemData(m_hWnd, IDC_COMBO1, m_SetsPP.iTexFormat);
 
@@ -233,6 +241,40 @@ HRESULT CVRMainPPage::OnActivate()
 
 	SendDlgItemMessageW(IDC_COMBO6, CB_ADDSTRING, 0, (LPARAM)L"Fixed font size");
 	SendDlgItemMessageW(IDC_COMBO6, CB_ADDSTRING, 0, (LPARAM)L"Increase font by window");
+
+	SendDlgItemMessageW(IDC_COMBO_RENDERER_DEVICE, CB_RESETCONTENT, 0, 0);
+	SendDlgItemMessageW(IDC_COMBO_RENDERER_DEVICE, CB_ADDSTRING, 0, (LPARAM)L"Automatic (display GPU)");
+	m_AdapterLuids.clear();
+	CComPtr<IDXGIFactory1> pFactory;
+	HRESULT hr = CreateDXGIFactory1(IID_PPV_ARGS(&pFactory));
+	if (FAILED(hr)) {
+		return hr;
+	}
+	for (UINT adapterIndex = 0;; ++adapterIndex) {
+		CComPtr<IDXGIAdapter1> pAdapter;
+		hr = pFactory->EnumAdapters1(adapterIndex, &pAdapter);
+		if (hr == DXGI_ERROR_NOT_FOUND) {
+			break;
+		}
+		if (FAILED(hr)) {
+			return hr;
+		}
+
+		DXGI_ADAPTER_DESC1 desc = {};
+		hr = pAdapter->GetDesc1(&desc);
+		if (FAILED(hr)) {
+			return hr;
+		}
+		if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
+			continue;
+		}
+
+		const UINT64 luid = static_cast<UINT64>(static_cast<UINT32>(desc.AdapterLuid.LowPart))
+			| (static_cast<UINT64>(static_cast<UINT32>(desc.AdapterLuid.HighPart)) << 32);
+		m_AdapterLuids.push_back(luid);
+		const std::wstring name = std::format(L"{} ({:04X}:{:04X})", desc.Description, desc.VendorId, desc.DeviceId);
+		SendDlgItemMessageW(IDC_COMBO_RENDERER_DEVICE, CB_ADDSTRING, 0, (LPARAM)name.c_str());
+	}
 
 	ComboBox_AddStringData(m_hWnd, IDC_COMBO1, L"Auto 8/10-bit Integer",  0);
 	ComboBox_AddStringData(m_hWnd, IDC_COMBO1, L"8-bit Integer",          8);
@@ -449,6 +491,17 @@ INT_PTR CVRMainPPage::OnReceiveMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
 		}
 
 		if (action == CBN_SELCHANGE) {
+			if (nID == IDC_COMBO_RENDERER_DEVICE) {
+				const LRESULT selectedAdapter = SendDlgItemMessageW(IDC_COMBO_RENDERER_DEVICE, CB_GETCURSEL, 0, 0);
+				if (selectedAdapter != CB_ERR) {
+					const UINT64 adapterLuid = selectedAdapter == 0 ? 0 : m_AdapterLuids[static_cast<size_t>(selectedAdapter - 1)];
+					if (adapterLuid != m_SetsPP.iRendererAdapterLuid) {
+						m_SetsPP.iRendererAdapterLuid = adapterLuid;
+						SetDirty();
+					}
+				}
+				return (LRESULT)1;
+			}
 			if (nID == IDC_COMBO6) {
 				lValue = SendDlgItemMessageW(IDC_COMBO6, CB_GETCURSEL, 0, 0);
 				if (lValue != m_SetsPP.iResizeStats) {

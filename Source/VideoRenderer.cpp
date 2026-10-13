@@ -67,6 +67,7 @@
 #define OPT_HdrOsdBrightness               L"HdrOsdBrightness"
 #define OPT_ConvertToSdr                   L"ConvertToSdr"
 #define OPT_UseD3DFullscreen               L"UseD3DFullscreen"
+#define OPT_RendererAdapterLuid            L"RendererAdapterLuid"
 #define OPT_DisplayNits                    L"DisplayNits"
 
 static std::atomic_int g_nInstance = 0;
@@ -181,6 +182,10 @@ CMpcVideoRenderer::CMpcVideoRenderer(LPUNKNOWN pUnk, HRESULT* phr)
 		DWORD dw;
 		if (ERROR_SUCCESS == key.QueryDWORDValue(OPT_UseD3D11, dw)) {
 			m_Sets.bUseD3D11 = !!dw;
+		}
+		ULONGLONG adapterLuid = 0;
+		if (ERROR_SUCCESS == key.QueryQWORDValue(OPT_RendererAdapterLuid, adapterLuid)) {
+			m_Sets.iRendererAdapterLuid = adapterLuid;
 		}
 		if (ERROR_SUCCESS == key.QueryDWORDValue(OPT_ShowStatistics, dw)) {
 			m_Sets.bShowStats = !!dw;
@@ -1308,6 +1313,7 @@ STDMETHODIMP CMpcVideoRenderer::SaveSettings()
 	CRegKey key;
 	if (ERROR_SUCCESS == key.Create(HKEY_CURRENT_USER, OPT_REGKEY_VIDEORENDERER)) {
 		key.SetDWORDValue(OPT_UseD3D11,            m_Sets.bUseD3D11);
+		key.SetQWORDValue(OPT_RendererAdapterLuid, m_Sets.iRendererAdapterLuid);
 		key.SetDWORDValue(OPT_ShowStatistics,      m_Sets.bShowStats);
 		key.SetDWORDValue(OPT_ResizeStatistics,    m_Sets.iResizeStats);
 		key.SetDWORDValue(OPT_TextureFormat,       m_Sets.iTexFormat);
